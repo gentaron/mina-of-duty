@@ -28,6 +28,7 @@ const _altUp = new THREE.Vector3(0, 0, 1);
 const _origin = new THREE.Vector4();
 const _mat = new THREE.Matrix4();
 const _sphere = new THREE.Sphere();
+const _comp = ['x', 'y', 'z', 'w'];
 const _rel = new THREE.Vector3();
 
 export class CascadedShadowMaps {
@@ -147,7 +148,7 @@ export class CascadedShadowMaps {
     const splitNear = this.uniforms.owCsmSplitNear.value;
     const texel = this.uniforms.owCsmTexel.value;
     const range = this.uniforms.owCsmRange.value;
-    const comp = ['x', 'y', 'z', 'w'];
+    const comp = _comp;
 
     for (let i = 0; i < N; i++) {
       const cn = s[i];
