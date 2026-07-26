@@ -227,45 +227,54 @@ function bakeDetail(size, fn, aniso, normalScale = 1) {
  */
 export const CLOTH_TILE = 0.78;
 
+/**
+ * LEGACY CORE SECURITY faction cloth. The keys keep their old names (the three
+ * variants still reference `arid`/`woodland`/`urban` in soldier.js) but the
+ * families are re-hued to one coherent private-security wardrobe, distinguished
+ * by VALUE tier rather than pattern so the three read as one company:
+ *
+ *   arid     → ENFORCER    cool graphite / gunmetal, mid value  (mean 0.088)
+ *   woodland → CONSULTANT  warm business greige, the lightest    (mean 0.112)
+ *   urban    → AUDITOR     neutral near-black, the darkest        (mean 0.062)
+ *
+ * The two-scale blotch machinery is untouched — it still supplies the surface
+ * value variation the quality bar demands (no flat slabs), just in low-chroma
+ * corporate greys instead of camo tan/olive. `budget` is the mean the finished
+ * map is remapped onto (see CLOTH_BUDGET); the five families only set hue+ratio.
+ */
 export const CAMO = {
-  // family luminances: pale 0.335 / base 0.275 / mid 0.205 / dark 0.125 /
-  // olive 0.19 — a 2.7:1 macro value ratio inside the 0.18-0.32 window real
-  // printed multicam occupies, with the dark blotches allowed below it. The
-  // families are the *pattern*; `budget` is what the finished map is remapped
-  // onto (see CLOTH_BUDGET), so these five numbers only set hue and ratio.
   arid: {
-    // desert multicam is the pale one: it gets the top of the window
-    budget: 0.104,
-    pale: [0.382, 0.318, 0.212],
-    base: [0.320, 0.256, 0.163],
-    mid: [0.241, 0.186, 0.116],
-    dark: [0.146, 0.111, 0.072],
-    olive: [0.176, 0.190, 0.116],
-    macro: 2,
-    warp: 0.15,
-  },
-  woodland: {
-    // olive drab in the field sits well under desert tan
-    budget: 0.092,
-    pale: [0.354, 0.340, 0.230],
-    base: [0.246, 0.259, 0.170],
-    mid: [0.174, 0.190, 0.126],
-    dark: [0.104, 0.110, 0.083],
-    olive: [0.210, 0.196, 0.132],
-    macro: 3,
-    warp: 0.17,
-  },
-  urban: {
-    // wolf grey / near-black urban kit: the darkest of the three, and the one
-    // that reads as a plaster mannequin if it is allowed anywhere near 0.2
-    budget: 0.083,
-    pale: [0.330, 0.334, 0.342],
-    base: [0.226, 0.230, 0.239],
-    mid: [0.150, 0.154, 0.163],
-    dark: [0.078, 0.079, 0.088],
-    olive: [0.190, 0.188, 0.182],
+    // ENFORCER: charcoal gunmetal — neutral grey with only a whisper of cool
+    budget: 0.088,
+    pale: [0.314, 0.318, 0.328],
+    base: [0.242, 0.246, 0.256],
+    mid: [0.176, 0.180, 0.190],
+    dark: [0.102, 0.105, 0.113],
+    olive: [0.152, 0.155, 0.162],
     macro: 2,
     warp: 0.14,
+  },
+  woodland: {
+    // CONSULTANT: warm business greige / taupe — the lightest of the three
+    budget: 0.112,
+    pale: [0.360, 0.344, 0.312],
+    base: [0.272, 0.256, 0.226],
+    mid: [0.196, 0.182, 0.158],
+    dark: [0.120, 0.110, 0.094],
+    olive: [0.228, 0.212, 0.180],
+    macro: 3,
+    warp: 0.16,
+  },
+  urban: {
+    // AUDITOR: neutral near-black heavy armour, the darkest kit in the faction
+    budget: 0.074,
+    pale: [0.258, 0.260, 0.264],
+    base: [0.173, 0.175, 0.180],
+    mid: [0.120, 0.121, 0.125],
+    dark: [0.073, 0.074, 0.078],
+    olive: [0.137, 0.138, 0.141],
+    macro: 2,
+    warp: 0.13,
   },
 };
 
@@ -939,6 +948,39 @@ export class SoldierMaterials {
     // bloom into the sky, not enough to kill the sheen that makes it read glass.
     this._attachShader(m, null, 0.5);
     this.materials.set('glass', m);
+    return m;
+  }
+
+  /**
+   * LEGACY CORE SECURITY faction accent — Boss Magenta (#FF2D78) trim: helmet
+   * stripes, plate edges, the consultant's tie, the auditor's visor. A single
+   * shared material (like glass), keyed 'accent'. It reuses the plate set's
+   * normal + roughness so the trim is not a flat slab, carries a modest emissive
+   * so the thin band still reads as THREAT at gameplay distance (and catches the
+   * scene bloom), and takes the edge-darkening term at 0.6× so it stays bright
+   * without blooming into the sky at a silhouette. Values are linear working
+   * space, matching how the variant tints are authored.
+   */
+  accent() {
+    let m = this.materials.get('accent');
+    if (m) return m;
+    const set = this.sets.plate;
+    m = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(0.85, 0.030, 0.220),
+      emissive: new THREE.Color(0.92, 0.055, 0.305),
+      emissiveIntensity: 0.7,
+      normalMap: set.normal,
+      roughnessMap: set.orm,
+      metalnessMap: set.orm,
+      roughness: 0.6,
+      metalness: 0.0,
+      vertexColors: true,
+      dithering: true,
+    });
+    m.normalScale.set(0.6, 0.6);
+    m.name = 'ai_accent';
+    this._attachShader(m, null, 0.6);
+    this.materials.set('accent', m);
     return m;
   }
 

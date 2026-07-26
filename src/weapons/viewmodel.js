@@ -214,10 +214,15 @@ export class Viewmodel {
     }
     const ring = mergeAll(ringArcs);
     this._reticleGeo = [core, halo, rim, ring];
-    this.dotCore = new THREE.Mesh(core, mats.reticle(0xff1206, 0.95));
-    this.dotHalo = new THREE.Mesh(halo, mats.reticle(0xff2a0c, 0.34));
+    // NERDCON: the dot is Cyan Pulse #00E5FF, not the stock red. The intensity
+    // budget above is unchanged and still applies — 0.95 keeps the core on the
+    // near-linear part of the AgX curve, where a saturated cyan stays a saturated
+    // cyan instead of desaturating to white. The halo is one step toward white
+    // (bloom seed) and the ring carries the emitter read.
+    this.dotCore = new THREE.Mesh(core, mats.reticle(0x00e5ff, 0.95));
+    this.dotHalo = new THREE.Mesh(halo, mats.reticle(0x5cf0ff, 0.34));
     this.dotRim = new THREE.Mesh(rim, mats.reticleOutline(0.85));
-    this.dotRing = new THREE.Mesh(ring, mats.reticle(0xff1206, 0.95 * 0.5));
+    this.dotRing = new THREE.Mesh(ring, mats.reticle(0x00e5ff, 0.95 * 0.5));
     this.dotHalo.renderOrder = 19;
     this.dotRim.renderOrder = 20;
     this.dotRing.renderOrder = 20;

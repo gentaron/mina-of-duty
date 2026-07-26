@@ -1,4 +1,4 @@
-import { FONT_STACK, FONT_DISPLAY, FONT_MONO } from './util.js';
+import { FONT_STACK, FONT_DISPLAY, FONT_MONO, FONT_ARCADE } from './util.js';
 
 /**
  * All HUD styling lives here as one injected stylesheet.
@@ -26,19 +26,39 @@ const CSS = `
   --u: calc(4px * var(--k));
   --pad: calc(var(--u) * 6.5);
 
-  --ink:   rgba(238,244,247,.95);
-  --ink-2: rgba(214,227,234,.60);
-  --ink-3: rgba(196,210,219,.30);
-  --hair:  rgba(255,255,255,.15);
-  --hair-2:rgba(255,255,255,.07);
+  /* ---- Arcade Terminal palette (NERDCON_CONTRACT, exact hexes) ----
+     Void #050505 · Panel #0D0D0D · NerdCon Blue #3568FF · Cyan Pulse #00E5FF
+     XP Green #39FF14 (gains) · Boss Magenta #FF2D78 (threat) · Loot Gold #FFD700
+     Terminal White #F0F0F0 · Fog Gray #888888. Threat is ALWAYS magenta-family,
+     never red-orange; gains are always green/gold; friendly accents blue/cyan. */
+  --void:   #050505;
+  --panel:  #0D0D0D;
+  --blue:   #3568FF;
+  --cyan:   #00E5FF;
+  --green:  #39FF14;
+  --gold:   #FFD700;
+  --magenta:#FF2D78;
+  --white:  #F0F0F0;
+  --gray:   #888888;
 
-  --amber: #ffb02a;
-  --red:   #ff3f31;
-  --blood: #8d0f0a;
-  --cyan:  #79d2ff;
-  --friend:#8fc8ff;
-  --enemy: #ff7a63;
-  --ok:    #a8e86a;
+  /* three ink levels off Terminal White */
+  --ink:   rgba(240,240,240,.95);
+  --ink-2: rgba(240,240,240,.60);
+  --ink-3: rgba(240,240,240,.34);
+  --hair:  rgba(0,229,255,.20);
+  --hair-2:rgba(240,240,240,.07);
+
+  /* legacy semantic names, repointed to Arcade Terminal so widget CSS keeps
+     working: amber=gold (low/caution + your gains), red=magenta (threat/empty),
+     acc=cyan (interactive). */
+  --amber: var(--gold);
+  --red:   var(--magenta);
+  --acc:   var(--cyan);
+  --blood: #7a0f38;
+  --cyan-lit: var(--cyan);
+  --friend:#5B8CFF;
+  --enemy: #FF6BA6;
+  --ok:    var(--green);
 
   --sh: 0 1px 2px rgba(0,0,0,.92), 0 0 calc(10px * var(--k)) rgba(0,0,0,.45);
   --sh-hard: 0 1px 1px rgba(0,0,0,.95);
@@ -47,7 +67,7 @@ const CSS = `
      tell and it fights whatever direction the scene key light comes from; a
      ring of eight equal-radius hard shadows reads as a drawn outline and is
      direction-free. Each is paired with one tight soft shadow for the seat. */
-  --oc: #080c10;
+  --oc: #050505;
   --o1:
     calc(1.5px * var(--k)) 0 0 var(--oc), calc(-1.5px * var(--k)) 0 0 var(--oc),
     0 calc(1.5px * var(--k)) 0 var(--oc), 0 calc(-1.5px * var(--k)) 0 var(--oc),
@@ -69,14 +89,15 @@ const CSS = `
   --ff: ${FONT_STACK};
   --fd: ${FONT_DISPLAY};
   --fm: ${FONT_MONO};
+  --fa: ${FONT_ARCADE};
 
   position: fixed; inset: 0;
   pointer-events: none;
   z-index: 10;
   font-family: var(--ff);
-  font-weight: 600;
+  font-weight: 400;
   color: var(--ink);
-  letter-spacing: .06em;
+  letter-spacing: .08em;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1, "lnum" 1;
   -webkit-font-smoothing: antialiased;
@@ -141,25 +162,25 @@ const CSS = `
 .ow-blood-a {
   position:absolute; inset:0;
   background:
-    radial-gradient(ellipse 78% 74% at 50% 50%, rgba(0,0,0,0) 62%, rgba(122,14,10,.30) 86%, rgba(74,8,5,.60) 100%);
+    radial-gradient(ellipse 78% 74% at 50% 50%, rgba(0,0,0,0) 62%, rgba(150,20,78,.30) 86%, rgba(92,10,46,.60) 100%);
   filter: url(#ow-warp);
 }
 .ow-blood-b {
   position:absolute; inset:0; opacity:.5; mix-blend-mode:multiply;
   background:
-    radial-gradient(circle at 2% 22%,  rgba(96,10,8,.75) 0, rgba(96,10,8,0) 17%),
-    radial-gradient(circle at 99% 58%, rgba(96,10,8,.7) 0, rgba(96,10,8,0) 15%),
-    radial-gradient(circle at 26% 101%,rgba(88,10,8,.75) 0, rgba(88,10,8,0) 19%),
-    radial-gradient(circle at 74% -2%, rgba(88,10,8,.7) 0, rgba(88,10,8,0) 18%);
+    radial-gradient(circle at 2% 22%,  rgba(150,18,80,.75) 0, rgba(150,18,80,0) 17%),
+    radial-gradient(circle at 99% 58%, rgba(150,18,80,.7) 0, rgba(150,18,80,0) 15%),
+    radial-gradient(circle at 26% 101%,rgba(140,16,74,.75) 0, rgba(140,16,74,0) 19%),
+    radial-gradient(circle at 74% -2%, rgba(140,16,74,.7) 0, rgba(140,16,74,0) 18%);
   filter: url(#ow-warp);
 }
 .ow-desat { position:absolute; inset:0; backdrop-filter: saturate(.6) contrast(1.04) brightness(.97); }
 .ow-hitflash { position:absolute; inset:0;
-  background: radial-gradient(ellipse 90% 86% at 50% 50%, rgba(150,16,10,.22) 40%, rgba(160,18,12,.62) 100%);
+  background: radial-gradient(ellipse 90% 86% at 50% 50%, rgba(200,28,108,.22) 40%, rgba(210,30,120,.60) 100%);
   mix-blend-mode:screen; }
 .ow-lowbeat {
   position:absolute; inset:0;
-  background: radial-gradient(ellipse 76% 70% at 50% 50%, rgba(0,0,0,0) 64%, rgba(150,14,10,.34) 100%);
+  background: radial-gradient(ellipse 76% 70% at 50% 50%, rgba(0,0,0,0) 64%, rgba(180,22,96,.34) 100%);
 }
 
 /* ====================================================== vitals (bottom left)
@@ -181,7 +202,7 @@ const CSS = `
   text-shadow: var(--sh-o1);
 }
 .ow-vt-num {
-  font-family: var(--fd); font-size: calc(26px * var(--k)); font-weight:700;
+  font-family: var(--fd); font-size: calc(26px * var(--k)); font-weight:800;
   letter-spacing:.02em; line-height:.85; color: var(--ink);
   text-shadow: var(--o2), 0 0 calc(12px * var(--k)) rgba(0,0,0,.5);
   will-change: color, transform;
@@ -201,7 +222,7 @@ const CSS = `
 .ow-vt-track > i {
   position:absolute; left:0; top:0; bottom:0; width:100%;
   transform-origin:left center;
-  background: linear-gradient(to bottom, #fbfdfc 0%, #e1e7e4 46%, #b3bcb9 100%);
+  background: linear-gradient(to bottom, #f4fdff 0%, #cfeef6 46%, #9fd4e0 100%);
   will-change: transform;
 }
 .ow-vt-track > u {
@@ -210,27 +231,27 @@ const CSS = `
     rgba(0,0,0,0) 0, rgba(0,0,0,0) calc(20% - 1px),
     rgba(4,8,11,.85) calc(20% - 1px), rgba(4,8,11,.85) 20%);
 }
-.ow-vitals.low .ow-vt-track > i { background: linear-gradient(to bottom, #ffd98a, #f2a01c); }
-.ow-vitals.low .ow-vt-num { color: var(--amber); }
-.ow-vitals.crit .ow-vt-track > i { background: linear-gradient(to bottom, #ff8b7a, #e02414); }
-.ow-vitals.crit .ow-vt-num { color: var(--red); }
+.ow-vitals.low .ow-vt-track > i { background: linear-gradient(to bottom, #ffe98a, var(--gold)); }
+.ow-vitals.low .ow-vt-num { color: var(--gold); }
+.ow-vitals.crit .ow-vt-track > i { background: linear-gradient(to bottom, #ff7ab0, var(--magenta)); }
+.ow-vitals.crit .ow-vt-num { color: var(--magenta); }
 
 /* armour: thinner, cyan, plate-segmented, its own label */
 .ow-armour {
   display:flex; align-items:center; gap: calc(var(--u) * 1.4);
   margin-top: calc(var(--u) * 1.5);
 }
-.ow-armour .ow-vt-lbl { color: rgba(150,206,238,.7); }
+.ow-armour .ow-vt-lbl { color: rgba(0,229,255,.72); }
 .ow-arm-plates { display:flex; gap: calc(var(--u) * .8); flex:1; }
 .ow-plate {
   flex:1; height: calc(5px * var(--k));
   background: rgba(5,9,12,.7);
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,.5), 0 0 0 1px rgba(121,190,230,.18);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.5), 0 0 0 1px rgba(0,229,255,.20);
   position:relative; overflow:hidden;
 }
 .ow-plate i {
   position:absolute; left:0; top:0; bottom:0; width:100%;
-  background: linear-gradient(to bottom, #bde9ff, #3ba6e2);
+  background: linear-gradient(to bottom, #9ff4ff, #00b8cf);
   transform-origin: left center;
 }
 
@@ -271,7 +292,7 @@ const CSS = `
 }
 .ow-ammo-cur {
   font-family: var(--fd);
-  font-size: calc(56px * var(--k)); font-weight:700; letter-spacing:.02em;
+  font-size: calc(54px * var(--k)); font-weight:800; letter-spacing:0;
   color: var(--ink); text-shadow: var(--o2), 0 0 calc(16px * var(--k)) rgba(0,0,0,.55);
   will-change: color, transform;
 }
@@ -416,8 +437,8 @@ const CSS = `
   width:0; height:0;
   border-left: calc(4.5px * var(--k)) solid transparent;
   border-right: calc(4.5px * var(--k)) solid transparent;
-  border-top: calc(5.5px * var(--k)) solid var(--amber);
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,.95));
+  border-top: calc(5.5px * var(--k)) solid var(--acc);
+  filter: drop-shadow(0 0 calc(3px * var(--k)) rgba(0,229,255,.6)) drop-shadow(0 1px 2px rgba(0,0,0,.95));
 }
 .ow-compass-obj {
   position:absolute; top: calc(28px * var(--k)); transform:translateX(-50%);
@@ -429,20 +450,43 @@ const CSS = `
   will-change: transform;
 }
 
-/* ============================================================= match bar */
-.ow-match {
-  position:absolute; left:50%; top:calc(var(--pad) * .7 + 45px * var(--k));
+/* =============================================================== run bar
+   Replaces the decorative TDM match bar. Top-centre, under the compass: the
+   persistent HOLD THE LEDGER readout — wave + threat line, the running score
+   (Loot Gold, tabular, tweened in RunBar) and the streak multiplier chip. */
+.ow-runbar {
+  position:absolute; left:50%; top:calc(var(--pad) * .7 + 43px * var(--k));
   transform: translateX(-50%);
-  display:flex; align-items:center; gap: calc(var(--u) * 2.5);
-  font-size: calc(11px * var(--k)); letter-spacing:.18em;
-  color: var(--ink-2); text-shadow: var(--sh-o1);
+  display:flex; flex-direction:column; align-items:center;
+  gap: calc(var(--u) * .7);
+  text-shadow: var(--sh-o1); white-space:nowrap;
 }
-.ow-match b { font-family: var(--fd); font-size: calc(19px * var(--k)); font-weight:700;
-  letter-spacing:.04em; }
-.ow-match .us { color: var(--friend); }
-.ow-match .them { color: var(--enemy); }
-.ow-match .clock { color: var(--ink); font-variant-numeric: tabular-nums; }
-.ow-match .sep { width:1px; height: calc(11px * var(--k)); background: var(--hair); }
+.ow-rb-wave {
+  display:flex; align-items:center; gap: calc(var(--u) * 1.4);
+  font-size: calc(10px * var(--k)); letter-spacing:.32em; color: var(--ink-2);
+}
+.ow-rb-wave b { color: var(--cyan); font-weight:700; letter-spacing:.26em;
+  text-shadow: var(--o1), 0 0 calc(8px * var(--k)) rgba(0,229,255,.3); }
+.ow-rb-wave .thr { color: var(--enemy); letter-spacing:.22em; }
+.ow-rb-wave .dot { width:calc(3px * var(--k)); height:calc(3px * var(--k));
+  border-radius:50%; background: var(--ink-3); }
+.ow-rb-main { display:flex; align-items:center; gap: calc(var(--u) * 2); }
+.ow-rb-score {
+  font-family: var(--fd); font-weight:800; letter-spacing:.06em;
+  font-size: calc(28px * var(--k)); line-height:.9; color: var(--gold);
+  text-shadow: var(--o1), 0 0 calc(14px * var(--k)) rgba(255,215,0,.26);
+}
+.ow-rb-mult {
+  font-family: var(--fd); font-weight:800; letter-spacing:.02em;
+  font-size: calc(14px * var(--k)); color: var(--green); line-height:1;
+  padding: calc(2px * var(--k)) calc(5px * var(--k));
+  border: 1px solid rgba(57,255,20,.42); background: rgba(57,255,20,.08);
+  text-shadow: 0 0 calc(8px * var(--k)) rgba(57,255,20,.4);
+  will-change: transform;
+}
+.ow-rb-mult.hot { color: var(--gold); border-color: rgba(255,215,0,.5);
+  background: rgba(255,215,0,.10); text-shadow: 0 0 calc(9px * var(--k)) rgba(255,215,0,.5); }
+.ow-rb-mult.hidden { opacity:0; }
 
 /* =============================================================== minimap */
 .ow-minimap {
@@ -584,14 +628,18 @@ const CSS = `
 }
 .ow-banner-t {
   font-family: var(--fd);
-  font-size: calc(30px * var(--k)); letter-spacing:.3em; font-weight:700;
-  text-shadow: var(--sh-o2);
+  font-size: calc(28px * var(--k)); letter-spacing:.24em; font-weight:800;
+  text-shadow: var(--sh-o2), 0 0 calc(20px * var(--k)) rgba(0,229,255,.14);
 }
 .ow-banner-s {
   margin-top: calc(var(--u) * 1.4);
-  font-size: calc(12px * var(--k)); letter-spacing:.3em; color: var(--amber); font-weight:700;
+  font-size: calc(12px * var(--k)); letter-spacing:.3em; color: var(--gold); font-weight:700;
   text-shadow: var(--sh-o1);
 }
+/* wave-clear settle banner: the +bonus reads as a gain (XP Green) */
+.ow-banner.settle .ow-banner-s { color: var(--green); }
+.ow-banner.threat .ow-banner-t { color: var(--white); }
+.ow-banner.threat .ow-banner-s { color: var(--enemy); }
 .ow-banner-rule {
   margin: calc(var(--u) * 1.4) auto 0; width: calc(120px * var(--k)); height:1px;
   background: linear-gradient(to right, transparent, rgba(255,255,255,.5), transparent);
@@ -609,16 +657,16 @@ const CSS = `
   transform: translateY(-50%);
   width: calc(430px * var(--k));
   padding-left: calc(var(--u) * 4.5);
-  border-left: calc(2px * var(--k)) solid var(--amber);
+  border-left: calc(2px * var(--k)) solid var(--acc);
 }
 .ow-menu h1 {
   font-family: var(--fd);
-  font-size: calc(46px * var(--k)); font-weight:700; letter-spacing:.3em;
-  text-shadow: 0 2px 6px rgba(0,0,0,.8);
+  font-size: calc(40px * var(--k)); font-weight:800; letter-spacing:.22em;
+  text-shadow: 0 2px 6px rgba(0,0,0,.8), 0 0 calc(18px * var(--k)) rgba(0,229,255,.18);
 }
 .ow-menu .sub {
   margin-top: calc(var(--u) * 1.2); font-size: calc(10px * var(--k));
-  letter-spacing:.28em; color: var(--ink-3);
+  letter-spacing:.28em; color: var(--cyan);
 }
 .ow-menu .rule {
   margin: calc(var(--u) * 5) 0 calc(var(--u) * 2); height:1px;
@@ -630,7 +678,7 @@ const CSS = `
   border-bottom: 1px solid var(--hair-2);
 }
 .ow-row > .name { font-size: calc(11.5px * var(--k)); letter-spacing:.2em; color: var(--ink); }
-.ow-row > .val { font-family: var(--fm); font-size: calc(11px * var(--k)); color: var(--amber);
+.ow-row > .val { font-family: var(--fm); font-size: calc(11px * var(--k)); color: var(--acc);
   letter-spacing:.04em; min-width: calc(46px * var(--k)); text-align:right; }
 .ow-seg { display:flex; gap:0; }
 .ow-seg button {
@@ -641,8 +689,9 @@ const CSS = `
   cursor:pointer; position:relative; transition: color .12s, background .12s;
 }
 .ow-seg button:last-child { border-right:1px solid var(--hair); }
-.ow-seg button:hover { color: var(--ink); background: rgba(255,255,255,.07); }
-.ow-seg button.on { color:#0b0d0f; background: var(--ink); }
+.ow-seg button:hover { color: var(--ink); background: rgba(0,229,255,.10); }
+.ow-seg button.on { color:#03121a; background: var(--acc); border-color: var(--acc);
+  text-shadow:none; box-shadow: 0 0 calc(10px * var(--k)) rgba(0,229,255,.35); }
 .ow-slider { position:relative; width: calc(190px * var(--k)); height: calc(18px * var(--k)); }
 .ow-slider .track {
   position:absolute; left:0; right:0; top:50%; height: calc(2px * var(--k));
@@ -650,12 +699,12 @@ const CSS = `
 }
 .ow-slider .fill {
   position:absolute; left:0; top:50%; height: calc(2px * var(--k));
-  transform: translateY(-50%); background: var(--amber);
+  transform: translateY(-50%); background: var(--acc);
 }
 .ow-slider .knob {
   position:absolute; top:50%; width: calc(9px * var(--k)); height: calc(9px * var(--k));
-  background: var(--amber); transform: translate(-50%,-50%) rotate(45deg);
-  box-shadow: 0 0 calc(6px * var(--k)) rgba(255,176,42,.5);
+  background: var(--acc); transform: translate(-50%,-50%) rotate(45deg);
+  box-shadow: 0 0 calc(6px * var(--k)) rgba(0,229,255,.55);
 }
 .ow-slider input {
   position:absolute; inset:0; width:100%; height:100%; margin:0;
@@ -669,13 +718,188 @@ const CSS = `
   padding: calc(var(--u) * 2.2) calc(var(--u) * 5);
   cursor:pointer; transition: background .12s, border-color .12s;
 }
-.ow-btn:hover { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.4); }
-.ow-btn.primary { background: var(--amber); border-color: var(--amber); color:#100b02; }
-.ow-btn.primary:hover { background:#ffc251; }
+.ow-btn:hover { background: rgba(0,229,255,.12); border-color: rgba(0,229,255,.5); color:#fff; }
+.ow-btn.primary { background: var(--acc); border-color: var(--acc); color:#03121a;
+  box-shadow: 0 0 calc(16px * var(--k)) rgba(0,229,255,.32); }
+.ow-btn.primary:hover { background:#5cf0ff; border-color:#5cf0ff; }
 .ow-menu .hint {
   margin-top: calc(var(--u) * 4); font-size: calc(9.5px * var(--k));
   letter-spacing:.2em; color: var(--ink-3);
 }
+
+/* =============================================================== attract
+   Full-screen title / job-select shown at boot (game:state 'attract'). The
+   only screen allowed the Press Start 2P wordmark (+ the INSERT-COIN hint =
+   two arcade elements, the contract cap). pointer-events:auto so the job
+   cards catch the click that deploys the run. */
+.ow-attract {
+  position:absolute; inset:0; pointer-events:auto; overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+  background:
+    radial-gradient(ellipse 90% 60% at 50% 20%, rgba(53,104,255,.16), transparent 60%),
+    radial-gradient(ellipse 80% 70% at 50% 104%, rgba(255,45,120,.13), transparent 62%),
+    linear-gradient(180deg, #070709 0%, #050505 58%, #09060b 100%);
+  color: var(--white); text-transform:uppercase;
+  opacity:0; will-change:opacity;
+}
+/* CRT scanlines — the arcade-cabinet substrate */
+.ow-attract::before {
+  content:''; position:absolute; inset:0; pointer-events:none; opacity:.5;
+  background: repeating-linear-gradient(0deg,
+    rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,.22) 3px);
+  background-size: 100% 3px; mix-blend-mode:multiply;
+}
+.ow-attract::after {
+  content:''; position:absolute; inset:0; pointer-events:none;
+  box-shadow: inset 0 0 calc(260px * var(--k)) calc(44px * var(--k)) rgba(0,0,0,.72);
+}
+.ow-att-inner {
+  position:relative; z-index:1;
+  width: min(calc(1060px * var(--k)), 92vw);
+  display:flex; flex-direction:column; align-items:center; text-align:center;
+}
+.ow-att-mode {
+  font-size: calc(11px * var(--k)); letter-spacing:.5em; color: var(--cyan);
+  padding-left:.5em; text-shadow: 0 0 calc(12px * var(--k)) rgba(0,229,255,.4);
+}
+.ow-att-title {
+  font-family: var(--fa);
+  font-size: calc(50px * var(--k)); line-height:1.08; letter-spacing:.02em;
+  margin: calc(var(--u) * 3.5) 0 calc(var(--u) * 2.75); color: var(--white);
+  text-shadow:
+    calc(3px * var(--k)) calc(3px * var(--k)) 0 var(--magenta),
+    calc(-2px * var(--k)) calc(-1px * var(--k)) 0 var(--cyan),
+    0 0 calc(32px * var(--k)) rgba(53,104,255,.5);
+}
+.ow-att-sub {
+  font-size: calc(12px * var(--k)); letter-spacing:.42em; color: var(--ink-2); padding-left:.42em;
+}
+.ow-att-jobsel {
+  margin: calc(var(--u) * 8) 0 calc(var(--u) * 3.5);
+  display:flex; align-items:center; gap: calc(var(--u) * 2.5);
+  font-size: calc(10.5px * var(--k)); letter-spacing:.42em; color: var(--gold); padding-left:.42em;
+}
+.ow-att-jobsel .ln { width: calc(52px * var(--k)); height:1px;
+  background: linear-gradient(90deg, transparent, rgba(255,215,0,.6)); }
+.ow-att-jobsel .ln.r { background: linear-gradient(90deg, rgba(255,215,0,.6), transparent); }
+.ow-att-cards {
+  display:grid; grid-template-columns: repeat(3, 1fr);
+  gap: calc(var(--u) * 3.5); width:100%;
+}
+.ow-att-card {
+  position:relative; cursor:pointer; text-align:left;
+  padding: calc(var(--u) * 4) calc(var(--u) * 4) calc(var(--u) * 4.5);
+  background: linear-gradient(180deg, rgba(13,13,13,.92), rgba(6,6,8,.94));
+  border: 1px solid rgba(0,229,255,.22);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.02), 0 calc(10px * var(--k)) calc(30px * var(--k)) rgba(0,0,0,.5);
+  transition: border-color .14s, transform .14s, box-shadow .14s;
+  overflow:hidden;
+}
+.ow-att-card::before {
+  content:''; position:absolute; left:0; top:0; right:0; height: calc(2px * var(--k));
+  background: linear-gradient(90deg, var(--cyan), transparent); opacity:.6;
+  transition: background .14s, opacity .14s;
+}
+.ow-att-card:hover {
+  border-color: var(--magenta); transform: translateY(calc(-4px * var(--k)));
+  box-shadow: 0 calc(16px * var(--k)) calc(40px * var(--k)) rgba(255,45,120,.20), inset 0 0 0 1px rgba(255,45,120,.25);
+}
+.ow-att-card:hover::before { background: linear-gradient(90deg, var(--magenta), transparent); opacity:1; }
+.ow-card-idx { font-family: var(--fd); font-weight:800; font-size: calc(13px * var(--k));
+  color: var(--ink-3); letter-spacing:.1em; }
+.ow-card-name { font-family: var(--fd); font-weight:800; font-size: calc(19px * var(--k));
+  letter-spacing:.07em; color: var(--white); margin: calc(var(--u) * 1.5) 0 calc(var(--u) * .8); }
+.ow-card-role { font-size: calc(9px * var(--k)); letter-spacing:.28em; color: var(--cyan);
+  margin-bottom: calc(var(--u) * 2.5); }
+.ow-card-kit { font-size: calc(11px * var(--k)); letter-spacing:.01em; line-height:1.55;
+  color: var(--ink-2); text-transform:none; min-height: calc(50px * var(--k)); }
+.ow-card-weapon { margin-top: calc(var(--u) * 2.5); display:flex; align-items:center;
+  gap: calc(var(--u) * 1.2); font-size: calc(10px * var(--k)); letter-spacing:.14em; color: var(--gold); }
+.ow-card-weapon::before { content:''; width: calc(14px * var(--k)); height:1px; background: var(--gold); opacity:.7; }
+.ow-card-cta { margin-top: calc(var(--u) * 3.5); font-size: calc(10px * var(--k)); letter-spacing:.3em;
+  color: var(--ink-3); transition: color .14s; }
+.ow-att-card:hover .ow-card-cta { color: var(--magenta); }
+.ow-att-hint {
+  margin-top: calc(var(--u) * 8); font-family: var(--fa);
+  font-size: calc(11px * var(--k)); letter-spacing:.05em; color: var(--gold);
+  animation: ow-blink 1.4s ease-in-out infinite;
+  text-shadow: 0 0 calc(14px * var(--k)) rgba(255,215,0,.5);
+}
+@keyframes ow-blink { 0%,100%{opacity:1} 50%{opacity:.45} }
+.ow-att-footer {
+  margin-top: calc(var(--u) * 4); font-size: calc(9.5px * var(--k)); letter-spacing:.34em; color: var(--ink-3);
+}
+
+/* ======================================================= run-end overlays
+   Shared centred card for the death (INSUFFICIENT FUNDS) and game-over
+   (RUN SETTLED) screens. pointer-events:auto for the buttons. */
+.ow-screen {
+  position:absolute; inset:0; pointer-events:auto; overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+  background: radial-gradient(ellipse 120% 90% at 50% 44%, rgba(9,9,12,.82), rgba(5,5,5,.95));
+  backdrop-filter: blur(calc(7px * var(--k))) brightness(.66) saturate(.82);
+  opacity:0; will-change:opacity;
+}
+.ow-screen::before {
+  content:''; position:absolute; inset:0; pointer-events:none; opacity:.4;
+  background: repeating-linear-gradient(0deg,
+    rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,.25) 3px);
+  background-size: 100% 3px;
+}
+.ow-screen-card {
+  position:relative; z-index:1; text-align:center;
+  width: min(calc(560px * var(--k)), 90vw);
+  padding: calc(var(--u) * 9) calc(var(--u) * 8);
+  background: linear-gradient(180deg, rgba(13,13,13,.94), rgba(6,6,8,.95));
+  border: 1px solid rgba(0,229,255,.18);
+  box-shadow: 0 calc(24px * var(--k)) calc(70px * var(--k)) rgba(0,0,0,.62);
+}
+.ow-screen.death .ow-screen-card {
+  border-color: rgba(255,45,120,.42);
+  box-shadow: 0 calc(24px * var(--k)) calc(70px * var(--k)) rgba(0,0,0,.62), inset 0 0 calc(60px * var(--k)) rgba(255,45,120,.07);
+}
+.ow-sc-kicker { font-size: calc(10px * var(--k)); letter-spacing:.42em; color: var(--ink-3); }
+.ow-sc-title {
+  font-family: var(--fd); font-weight:800; letter-spacing:.12em;
+  font-size: calc(36px * var(--k)); margin: calc(var(--u) * 2.5) 0; color: var(--white);
+}
+.ow-screen.death .ow-sc-title { color: var(--magenta); text-shadow: 0 0 calc(28px * var(--k)) rgba(255,45,120,.45); }
+.ow-screen.best .ow-sc-title { color: var(--gold); text-shadow: 0 0 calc(28px * var(--k)) rgba(255,215,0,.42); }
+.ow-sc-body {
+  font-size: calc(11.5px * var(--k)); letter-spacing:.03em; line-height:1.6; text-transform:none;
+  color: var(--ink-2); max-width: calc(420px * var(--k)); margin: 0 auto calc(var(--u) * 5);
+}
+.ow-sc-score {
+  font-family: var(--fd); font-weight:800; font-size: calc(56px * var(--k)); letter-spacing:.04em;
+  color: var(--gold); line-height:.95; margin: 0 0 calc(var(--u) * 1.5);
+  text-shadow: 0 0 calc(30px * var(--k)) rgba(255,215,0,.3);
+}
+.ow-sc-delta { font-size: calc(10.5px * var(--k)); letter-spacing:.14em; color: var(--ink-2);
+  margin-bottom: calc(var(--u) * 5.5); }
+.ow-sc-delta b { color: var(--green); }
+.ow-sc-delta.miss b { color: var(--enemy); }
+.ow-sc-stats {
+  display:grid; grid-template-columns: repeat(4,1fr); gap: calc(var(--u) * 2);
+  margin: 0 auto calc(var(--u) * 5.5); max-width: calc(470px * var(--k));
+}
+.ow-sc-stat { border-top:1px solid var(--hair); padding-top: calc(var(--u) * 2); }
+.ow-sc-stat .k { font-size: calc(8.5px * var(--k)); letter-spacing:.22em; color: var(--ink-3); }
+.ow-sc-stat .v { font-family: var(--fd); font-weight:800; font-size: calc(20px * var(--k));
+  color: var(--white); margin-top: calc(var(--u) * .8); letter-spacing:.02em; }
+.ow-sc-tease {
+  font-size: calc(9.5px * var(--k)); letter-spacing:.2em; color: var(--cyan);
+  border:1px solid rgba(0,229,255,.24); padding: calc(var(--u) * 1.6) calc(var(--u) * 2.5);
+  display:inline-block; margin-bottom: calc(var(--u) * 5.5); background: rgba(0,229,255,.05);
+}
+.ow-sc-actions { display:flex; gap: calc(var(--u) * 2.5); justify-content:center; flex-wrap:wrap; }
+.ow-sc-ghost {
+  appearance:none; background:transparent; border:1px solid var(--hair-2);
+  color: var(--ink-3); font-family: var(--ff); font-weight:400; text-transform:uppercase;
+  font-size: calc(10.5px * var(--k)); letter-spacing:.2em;
+  padding: calc(var(--u) * 2.2) calc(var(--u) * 4.5); cursor:pointer;
+  transition: color .14s, border-color .14s;
+}
+.ow-sc-ghost:hover { color: var(--ink); border-color: var(--hair); }
 
 /* ============================================================== fadeouts */
 .ow-hidden { display:none !important; }

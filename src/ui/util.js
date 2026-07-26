@@ -9,23 +9,28 @@
  */
 
 /**
- * Condensed system stacks — no webfonts, crisp at any size.
+ * Arcade Terminal type system (NERDCON_CONTRACT).
  *
- * Verified against the capture browser with `node src/ui/preview.mjs --fonts`:
- * "Avenir Next Condensed" (four weights) carries the body text, "DIN Condensed"
- * (very narrow, bold only) carries display numerals, and both degrade through
- * Arial Narrow / Helvetica Neue on machines without them.
+ * ONE monospace family carries the whole HUD — JetBrains Mono, loaded via the
+ * Google Fonts link in index.html (weights 400/700/800, display=swap) and
+ * degrading through "SF Mono" / ui-monospace on machines offline. Uppercase,
+ * letterspaced labels; tabular figures on every counter. "DIN Condensed" style
+ * condensed faces are gone: the terminal look wants a fixed-width grid, not a
+ * military condensed. Press Start 2P (FONT_ARCADE) is reserved for the
+ * title-screen wordmark + "INSERT COIN" moments only — never body HUD.
  */
 export const FONT_STACK =
-  '"Avenir Next Condensed","DIN Alternate","Roboto Condensed","Arial Narrow",' +
-  '"Helvetica Neue",Inter,system-ui,-apple-system,sans-serif';
+  '"JetBrains Mono","SF Mono",ui-monospace,"Roboto Mono",Menlo,monospace';
 
-/** Display face: the ammo count, banners, the menu title. */
+/** Display face: the big ammo/score numerals, banners, the menu title.
+ *  Same family at weight 800 — heavier, still tabular, still on-grid. */
 export const FONT_DISPLAY =
-  '"DIN Condensed","Avenir Next Condensed","Oswald","Arial Narrow",' +
-  '"Helvetica Neue",Impact,system-ui,sans-serif';
+  '"JetBrains Mono","SF Mono",ui-monospace,"Roboto Mono",Menlo,monospace';
 
-export const FONT_MONO = '"SF Mono",ui-monospace,"Roboto Mono",Menlo,monospace';
+export const FONT_MONO = '"JetBrains Mono","SF Mono",ui-monospace,"Roboto Mono",Menlo,monospace';
+
+/** Arcade accent — title wordmark + INSERT COIN only. Max 2 elements per screen. */
+export const FONT_ARCADE = '"Press Start 2P","JetBrains Mono",ui-monospace,monospace';
 
 /* ------------------------------------------------------------------ dom --- */
 

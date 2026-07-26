@@ -30,6 +30,8 @@ const MATERIALS = {
   steel: { tile: 0.18 },
   rubber: { tile: 0.11 },
   glass: { tile: 1.0 },
+  // magenta faction trim (helmet stripe, plate edges, tie, visor)
+  accent: { tile: 0.20 },
 };
 
 /**
@@ -104,15 +106,16 @@ const GEAR = {
  * dragging every piece of its kit out of the albedo budget.
  */
 export const VARIANTS = {
+  // ENFORCER — charcoal / gunmetal corporate armour, Boss Magenta trim.
   vanguard: {
     camo: 'arid',
-    clothTint: [1.03, 1.0, 0.94],
-    gearTint: [1.08, 0.98, 0.80], // coyote brown
-    plateTint: [1.02, 0.96, 0.84],
+    clothTint: [0.99, 1.0, 1.03], // charcoal graphite (faint cool)
+    gearTint: [0.86, 0.88, 0.93], // gunmetal webbing
+    plateTint: [0.84, 0.86, 0.91], // charcoal plate
     skinTint: [1.0, 0.94, 0.88],
     helmet: true,
     helmetCover: true,
-    helmetTint: [0.72, 0.72, 0.68],
+    helmetTint: [0.56, 0.58, 0.63], // dark gunmetal shell
     goggles: true,
     gogglesDown: true,
     faceWrap: true,
@@ -122,12 +125,17 @@ export const VARIANTS = {
     weapon: 'carbine',
     bulk: 1.0,
     scale: 1.0,
+    // magenta helmet stripe + plate-edge trim
+    accentHelmetStripe: true,
+    accentPlateEdges: true,
   },
+  // CONSULTANT — beige/grey business-trench palette, subtle magenta tie. Bare
+  // head, lighter rig: "the consultant who invoices for this".
   irregular: {
     camo: 'woodland',
-    clothTint: [0.98, 1.02, 0.94],
-    gearTint: [0.92, 0.96, 0.74], // olive drab
-    plateTint: [0.90, 0.94, 0.80],
+    clothTint: [1.05, 1.01, 0.92], // warm greige
+    gearTint: [1.02, 0.96, 0.82], // taupe rig
+    plateTint: [0.98, 0.93, 0.85],
     skinTint: [0.86, 0.80, 0.74],
     helmet: false,
     headWrap: true,
@@ -142,16 +150,19 @@ export const VARIANTS = {
     weapon: 'ak',
     bulk: 0.94,
     scale: 0.985,
+    // subtle magenta necktie down the chest
+    accentTie: true,
   },
+  // AUDITOR — near-black heavy armour, magenta visor. Keeps the bulkier scale.
   breacher: {
     camo: 'urban',
-    clothTint: [0.98, 0.99, 1.02],
-    gearTint: [0.84, 0.86, 0.90], // wolf grey
-    plateTint: [0.86, 0.88, 0.92],
+    clothTint: [0.95, 0.96, 0.99], // neutral near-black
+    gearTint: [0.68, 0.70, 0.75], // near-black rig
+    plateTint: [0.60, 0.62, 0.67],
     skinTint: [1.06, 0.98, 0.92],
     helmet: true,
     helmetCover: false, // bare painted shell instead of a cloth cover
-    helmetTint: [0.82, 0.83, 0.86],
+    helmetTint: [0.42, 0.43, 0.47], // near-black shell
     // goggles parked on the shell (not over the eyes like vanguard) plus a hard
     // ballistic half-mask: same helmet family, completely different head read
     goggles: true,
@@ -164,6 +175,9 @@ export const VARIANTS = {
     weapon: 'carbine',
     bulk: 1.06,
     scale: 1.025,
+    // magenta visor band across the brow + plate-edge trim
+    accentVisor: true,
+    accentPlateEdges: true,
   },
 };
 
@@ -721,6 +735,42 @@ export function buildSoldier(name, { rng, materials }) {
     name: 'sling',
   });
 
+  /* ---------------- faction accents (magenta) ------------------------ *
+   * Added LAST so 'accent' is always the final material slot (see
+   * MATERIAL_SLOTS). Grime/dirt/dust/wear are held at 0 so the vertex-colour
+   * pipeline cannot desaturate the magenta trim toward neutral. */
+  const accent = { material: 'accent', colour: [1, 1, 1], grime: 0, dirt: 0, dust: 0, wear: 0 };
+  if (V.accentHelmetStripe) {
+    B.add(P.helmetStripe(head, { y: 0.055, w: 0.022 }), { ...accent, bone: 'Head', name: 'accentHelmet' });
+  }
+  if (V.accentVisor) {
+    // front arc across the brow — a magenta visor line
+    B.add(P.helmetStripe(head, { y: 0.010, w: 0.030, a0: -1.15, a1: 1.15 }), {
+      ...accent, bone: 'Head', name: 'accentVisor',
+    });
+  }
+  if (V.accentPlateEdges) {
+    for (const side of [-1, 1]) {
+      B.add(P.plateEdge(side), {
+        ...accent,
+        bones: ['Spine1', 'Spine2', 'Spine'],
+        bias: [1, 1, 0.5],
+        name: `accentEdge${side < 0 ? 'R' : 'L'}`,
+      });
+    }
+  }
+  if (V.accentTie) {
+    // primary, always-visible accent: a magenta band on the head scarf
+    B.add(P.scarfBand(head), { ...accent, bone: 'Head', name: 'accentScarf' });
+    // plus a subtle throat scarf that reads when the arms are down
+    B.add(P.necktie(), {
+      ...accent,
+      bones: ['Spine2', 'Neck', 'Spine1'],
+      bias: [1, 0.6, 0.4],
+      name: 'accentTie',
+    });
+  }
+
   const built = B.build();
   // Guard the prewarm contract: see MATERIAL_SLOTS.
   if (built.materialNames.join() !== MATERIAL_SLOTS.filter((s) => built.materialNames.includes(s)).join()) {
@@ -757,6 +807,9 @@ export function buildSoldier(name, { rng, materials }) {
  */
 export const MATERIAL_SLOTS = Object.freeze([
   'cloth', 'gear', 'boot', 'rubber', 'plate', 'polymer', 'skin', 'glass', 'steel',
+  // faction accents are always added LAST in buildSoldier, so 'accent' is always
+  // the final slot — keep it here in that position or the prewarm assert trips.
+  'accent',
 ]);
 
 /**
@@ -830,6 +883,8 @@ export function resolveMaterials(name, slots, materials) {
         return materials.get('rubber', { key: name, normalScale: 1.2 });
       case 'glass':
         return materials.glass();
+      case 'accent':
+        return materials.accent();
       default:
         return materials.get('polymer', { key: name });
     }

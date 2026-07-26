@@ -7,12 +7,16 @@ import { DamageArcs } from './damage.js';
 import { HealthFx } from './health.js';
 import { AmmoPanel } from './ammo.js';
 import { Killfeed } from './killfeed.js';
-import { Compass, MatchBar } from './compass.js';
+import { Compass, RunBar } from './compass.js';
 import { Minimap } from './minimap.js';
 import { WorldMarkers } from './markers.js';
 import { Prompt, Banner } from './prompts.js';
 import { PauseMenu } from './menu.js';
 import { CombatDemo } from './demo.js';
+import { AttractScreen, DeathScreen, GameOverScreen } from './screens.js';
+
+/** Enemy callsigns (LEGACY CORE SECURITY) used when an event omits a name. */
+const CALLSIGNS = ['COBOL', 'BATCH', 'FAX', 'MAINFRAME', 'T+2', 'MT-103', 'MICR', 'IVR', 'PDF_STMT', 'LEDGERLOCK'];
 
 const MAX_BLIPS = 48;
 
@@ -85,11 +89,31 @@ export class UiSystem {
     this.hit = new Hitmarkers(this.centreLayer);
     this.minimap = new Minimap(this.chromeLayer, this.rng.fork());
     this.compass = new Compass(this.chromeLayer);
-    this.matchBar = new MatchBar(this.chromeLayer);
+    this.runBar = new RunBar(this.chromeLayer);
     this.killfeed = new Killfeed(this.chromeLayer);
     this.ammo = new AmmoPanel(this.chromeLayer);
     this.prompt = new Prompt(this.chromeLayer);
     this.banner = new Banner(this.chromeLayer);
+
+    // Arcade meta-screens (over the HUD chrome, under the pause menu).
+    this.attract = new AttractScreen(this.root, (job) => this._startRun(job));
+    this.death = new DeathScreen(this.root, {
+      onContinue: () => {
+        this.death.hide();
+        ctx.events.emit('ui:continue', {});
+        ctx.input?.requestPointerLock?.();
+      },
+      onAccept: () => {
+        ctx.events.emit('ui:accept', {});
+      },
+    });
+    this.over = new GameOverScreen(this.root, () => {
+      this.over.hide();
+      this._resetRunState();
+      ctx.events.emit('ui:restart', {});
+      ctx.input?.requestPointerLock?.();
+    });
+
     this.menu = new PauseMenu(this.root, ctx);
 
     this.health.onBeat = (i) => this.sfx('heartbeat', 0.35 + i * 0.5);
@@ -106,7 +130,7 @@ export class UiSystem {
       magSize: 30,
       reloading: false,
       reloadProgress: 0,
-      weaponName: 'M4A1',
+      weaponName: 'RULES ENGINE MK4',
       fireMode: 'AUTO',
       lethalCount: 2,
       tacticalCount: 1,
@@ -116,10 +140,13 @@ export class UiSystem {
       ads: false,
       airborne: false,
       baseSpread: 5.5,
-      scoreUs: 0,
-      scoreThem: 0,
-      timeLeft: 600,
-      mode: 'TDM',
+      mode: 'HOLD THE LEDGER',
+      // ---- HOLD THE LEDGER run state (driven by game:* events) ----
+      wave: 1,
+      score: 0,
+      mult: 1,
+      waveThreat: 'HOLD THE LEDGER',
+      job: null,
       /** true when no player/weapons subsystem is driving us (stub-safe demo) */
       simulate: false,
       time: 0,
@@ -193,12 +220,15 @@ export class UiSystem {
         this._lastKillAt = ctx.time.elapsed;
         this.killfeed.push({
           attacker: 'YOU',
-          victim: e.target?.name ?? e.name ?? 'ENEMY',
+          victim: e.target?.name ?? e.name ?? this._callsign(),
           headshot: !!e.headshot,
           mine: true,
         });
-        this.banner.show('Enemy Eliminated', e.headshot ? '+150 XP · HEADSHOT' : '+100 XP');
-        this.state.scoreUs++;
+        // Score-feed copy (NERDCON_CONTRACT): headshot = SAR FILED +150, else CARD DECLINED +100.
+        this.banner.show(e.headshot ? 'SAR FILED' : 'CARD DECLINED', e.headshot ? '+150' : '+100', 1.6, 'kill');
+        // Defensive fallback: if no `game` subsystem drives the score, still move
+        // the counter locally so the run bar is never static. game:score overrides.
+        if (!this.ctx.peek('game')) this.state.score += e.headshot ? 150 : 100;
       }
     });
 
@@ -219,7 +249,7 @@ export class UiSystem {
     on('actor:death', (e) => {
       if (ctx.time.elapsed - this._lastKillAt < 0.3) return; // already credited
       this.killfeed.push({
-        attacker: e?.by?.name ?? 'ENEMY',
+        attacker: e?.by?.name ?? this._callsign(),
         victim: e?.actor?.name ?? 'OPERATOR',
         attackerFriendly: false,
       });
@@ -240,8 +270,65 @@ export class UiSystem {
       if (e.stance !== undefined) s.crouch = e.stance === 'crouch' || e.stance === 'prone';
     });
 
+    // ==================================================================== //
+    // HOLD THE LEDGER game loop (src/game, id `game`). All optional: if the
+    // game subsystem never emits, the attract screen + job click alone still
+    // release the player into the running game.
+    // ==================================================================== //
+    on('game:state', (e) => this._setGameState(e?.state));
+
+    on('game:wave', (e) => {
+      const wave = e?.wave ?? this.state.wave ?? 1;
+      const count = e?.count;
+      this.state.wave = wave;
+      this.state.waveThreat = 'LEGACY CORE SECURITY';
+      const sub = count ? count + ' INBOUND · LEGACY CORE SECURITY' : 'LEGACY CORE SECURITY INBOUND';
+      this.banner.show('WAVE ' + wave, sub, 2.4, 'threat');
+      this.sfx('wave_start', 0.7);
+    });
+
+    on('game:waveClear', (e) => {
+      const wave = e?.wave ?? this.state.wave ?? 1;
+      const bonus = Math.max(0, Math.round(e?.bonus ?? 0));
+      this.banner.show('WAVE ' + wave + ' SETTLED', '+' + bonus.toLocaleString('en-US'), 2.6, 'settle');
+      this.sfx('wave_clear', 0.8);
+    });
+
+    on('game:score', (e) => {
+      if (e?.score !== undefined) this.state.score = e.score;
+      if (e?.mult !== undefined) this.state.mult = e.mult;
+    });
+
+    on('game:mult', (e) => {
+      if (e?.mult !== undefined) this.state.mult = e.mult;
+    });
+
+    on('game:continueOffer', () => {
+      this._setGameState('down');
+      this.death.show({ canContinue: true });
+    });
+
+    on('game:over', (e) => {
+      this.death.hide();
+      this.attract.hide();
+      this.over.show(e ?? {});
+      this.sfx('run_over', 0.8);
+    });
+
+    // Capture harness applies a camera shot; clear the attract/end overlays so
+    // world + combat shots frame the game, not a menu. (Unknown `default` shot
+    // returns before emitting this, so the title screen still captures clean.)
+    on('shot:applied', () => {
+      this.attract.hide();
+      this.death.hide();
+      this.over.hide();
+    });
+
     this.resize(ctx.canvas.clientWidth || innerWidth, ctx.canvas.clientHeight || innerHeight, ctx);
     this._prevPos.copy(this._playerPos());
+
+    // Boot straight into the attract screen (no game subsystem required).
+    this.attract.show(true);
   }
 
   /* ------------------------------------------------------------- helpers -- */
@@ -283,6 +370,69 @@ export class UiSystem {
       else if (typeof a.sfx === 'function') a.sfx(id, gain);
     } catch {
       /* audio is optional feedback — never let it break the HUD */
+    }
+  }
+
+  /* ------------------------------------------------------ game loop glue -- */
+
+  /** Rotating LEGACY CORE SECURITY callsign — deterministic, no Math.random. */
+  _callsign() {
+    this._csi = (this._csi ?? 0) + 1;
+    return CALLSIGNS[this._csi % CALLSIGNS.length];
+  }
+
+  _resetRunState() {
+    const s = this.state;
+    s.wave = 1;
+    s.score = 0;
+    s.mult = 1;
+    s.waveThreat = 'HOLD THE LEDGER';
+  }
+
+  /** Job card clicked on the attract screen → deploy into the run. */
+  _startRun(job) {
+    this.attract.hide();
+    this.death.hide();
+    this.over.hide();
+    this._resetRunState();
+    this.state.job = job ?? 'fraud-analyst';
+    const w = {
+      'fraud-analyst': 'RULES ENGINE MK4',
+      'payments-engineer': 'VELOCITY-9',
+      'compliance-officer': 'SIDECAR',
+    }[this.state.job];
+    if (w) this.state.weaponName = w;
+    this.ctx.events.emit('ui:startRun', { job: this.state.job });
+    // Hand off to the game's click-to-lock flow (this call is inside the gesture).
+    this.ctx.input?.requestPointerLock?.();
+  }
+
+  /** Reflect `game:state` transitions onto the meta-screens. */
+  _setGameState(state) {
+    switch (state) {
+      case 'attract':
+        this.death.hide();
+        this.over.hide();
+        this._resetRunState();
+        this.attract.show();
+        break;
+      case 'play':
+        this.attract.hide();
+        this.death.hide();
+        this.over.hide();
+        break;
+      case 'down':
+        this.attract.hide();
+        this.over.hide();
+        if (!this.death.open) this.death.show({ canContinue: false });
+        break;
+      case 'over':
+        this.attract.hide();
+        this.death.hide();
+        if (!this.over.open) this.over.show();
+        break;
+      default:
+        break;
     }
   }
 
@@ -375,6 +525,11 @@ export class UiSystem {
    * 'combat' runs the scripted firefight timeline in demo.js.
    */
   debugState(name = 'combat') {
+    // Any debug state means "not on the attract/end screens" — clear them so
+    // the capture harness frames the HUD, never a menu.
+    this.attract.hide();
+    this.death.hide();
+    this.over.hide();
     if (name === 'clean') {
       this.demo?.stop(this);
       this.demo = null;
@@ -509,9 +664,14 @@ export class UiSystem {
     this.health.update(dt, s);
     this.ammo.update(dt, s);
     this.killfeed.update(dt);
-    this.matchBar.update(s);
+    this.runBar.update(dt, s);
     this.prompt.update(dt);
     this.banner.update(dt);
+
+    // Meta-screens fade on UNSCALED time so they still animate while paused/dead.
+    this.attract.update(rawDt);
+    this.death.update(rawDt);
+    this.over.update(rawDt);
 
     this._buildCompassObjectives(pos);
     this.compass.update(heading, this._compassObjs);
@@ -601,11 +761,14 @@ export class UiSystem {
     this.ammo.dispose();
     this.killfeed.dispose();
     this.compass.dispose();
-    this.matchBar.dispose();
+    this.runBar.dispose();
     this.minimap.dispose();
     this.markers.dispose();
     this.prompt.dispose();
     this.banner.dispose();
+    this.attract.dispose();
+    this.death.dispose();
+    this.over.dispose();
     this.menu.dispose();
     this.root.remove();
     removeStyles();

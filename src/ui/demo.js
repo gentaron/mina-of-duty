@@ -38,7 +38,7 @@ export class CombatDemo {
     s.magSize = 30;
     s.reloading = false;
     s.reloadProgress = 0;
-    s.weaponName = 'M4A1';
+    s.weaponName = 'RULES ENGINE MK4';
     s.fireMode = 'AUTO';
     s.lethalCount = 2;
     s.tacticalCount = 1;
@@ -46,10 +46,12 @@ export class CombatDemo {
     s.sprint = false;
     s.crouch = false;
     s.ads = false;
-    s.scoreUs = 43;
-    s.scoreThem = 38;
-    s.timeLeft = 247;
-    s.mode = 'TDM';
+    // HOLD THE LEDGER run state — mid-run, on a streak.
+    s.mode = 'HOLD THE LEDGER';
+    s.wave = 3;
+    s.score = 18450;
+    s.mult = 4;
+    s.waveThreat = 'LEGACY CORE SECURITY';
     s.simulate = true;
 
     ui.health.hurt = 0.13; // start already bloodied rather than fading in
@@ -61,9 +63,9 @@ export class CombatDemo {
     // Killfeed seeded with three rows at different ages so the column shows the
     // full fade ramp instead of three identical rows.
     const seed = [
-      { attacker: 'VOSS', victim: 'M. RIDLEY', headshot: false, age: 3.2 },
-      { attacker: 'KRAUSE', victim: 'HOLT', headshot: true, age: 1.9, attackerFriendly: false },
-      { attacker: 'YOU', victim: 'A. SOKOL', headshot: false, age: 0.55, mine: true },
+      { attacker: 'YOU', victim: 'COBOL', headshot: false, age: 3.2, mine: true },
+      { attacker: 'YOU', victim: 'MAINFRAME', headshot: true, age: 1.9, mine: true },
+      { attacker: 'YOU', victim: 'T+2', headshot: false, age: 0.55, mine: true },
     ];
     for (const e of seed) {
       const it = ui.killfeed.push(e);
@@ -71,9 +73,9 @@ export class CombatDemo {
     }
 
     ui.setObjectives([
-      { position: new THREE.Vector3(-6.5, 1.4, -2.5), label: 'A', name: 'PLANT' },
-      { position: new THREE.Vector3(15.5, 1.4, -11), label: 'B', name: 'HOLD' },
-      { position: new THREE.Vector3(-19, 1.4, 25), label: 'C', name: 'EXFIL' },
+      { position: new THREE.Vector3(-6.5, 1.4, -2.5), label: 'L', name: 'THE LEDGER' },
+      { position: new THREE.Vector3(15.5, 1.4, -11), label: 'S', name: 'SPAWN' },
+      { position: new THREE.Vector3(-19, 1.4, 25), label: 'V', name: 'VAULT' },
     ]);
 
     // Enemy / friendly contacts around the player for the minimap.
@@ -85,7 +87,7 @@ export class CombatDemo {
       { x: 8, z: 22, kind: 'friend', heading: 340 },
     ]);
 
-    ui.setPrompt({ key: 'F', text: 'Pick up ammo', sub: 'hold', progress: 0.42 });
+    ui.setPrompt({ key: 'F', text: 'Secure the ledger', sub: 'hold', progress: 0.42 });
   }
 
   stop(ui) {
@@ -116,14 +118,14 @@ export class CombatDemo {
 
     // continuous walk bob on the reticle
     s.move = 0.3 + 0.14 * Math.sin(this.frame * 0.035);
-    s.timeLeft = Math.max(0, 247 - this.frame / 60);
 
     switch (f) {
       case 20:
         ui.arcs.spawn(-0.72, 0.69, 0.8); // behind-left
         break;
       case 40:
-        ui.banner.show('Enemy Eliminated', '+100 XP');
+        ui.banner.show('CARD DECLINED', '+100', 1.6, 'kill');
+        s.score += 100;
         break;
       case 50:
         ui.markers.spawnGrenade(this._worldPoint(ui, 9, -3.4, -1.3), 2.6);
@@ -134,12 +136,14 @@ export class CombatDemo {
         ui.hurt(11, 0.62, -0.78);
         break;
       case 100:
-        ui.killfeed.push({ attacker: 'YOU', victim: 'D. KOVACS', headshot: true, mine: true });
+        ui.killfeed.push({ attacker: 'YOU', victim: 'PDF_STMT', headshot: true, mine: true });
+        s.score += 150;
         break;
       case 128:
         ui.hitmarker('kill');
-        ui.banner.show('Enemy Eliminated', '+100 XP');
+        ui.banner.show('SAR FILED', '+150', 1.6, 'kill');
         ui.damageNumber(this._worldPoint(ui, 13, 1.1, 0.2), 118, 'kill');
+        s.score += 150;
         break;
       case 150:
         s.reloading = true;

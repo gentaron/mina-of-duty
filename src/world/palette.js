@@ -387,4 +387,68 @@ export const PALETTE = {
       three: { emissive: 0xffc47a, emissiveIntensity: 0, opacity: 0.5 },
     },
   },
+
+  // ----------------------------------------------------------------- nerdcon --
+  /**
+   * THE LEDGER. Brushed gold, self-lit with a restrained emissive the world
+   * pulses at runtime (see WorldSystem.update). Kept low (0.35–0.7) and
+   * toneMapped so it reads as warm gold in the 16:30 sun rather than a blown
+   * white block, and so a later night/bloom pass has clean emission to catch.
+   */
+  nerdcon_gold: {
+    name: 'metal_brushed',
+    surface: 'metal',
+    opts: {
+      vertexMasks: true,
+      tint: 0xffd700,
+      scale: 0.5,
+      normalStrength: 1.05,
+      three: { emissive: 0xffc61f, emissiveIntensity: 0.3, toneMapped: true },
+    },
+  },
+  /** The Ledger plinth: dark dressed stone — a value anchor under the gold. */
+  nerdcon_plinth: {
+    name: 'concrete',
+    surface: 'concrete',
+    opts: {
+      vertexMasks: true,
+      tint: 0x6b665e,
+      scale: 0.9,
+      normalStrength: 1.2,
+      weather: [0.4, 0.5, 0.7, 0.5],
+    },
+  },
+  /** ATM / kiosk fascia: a cool painted-steel intruder among the plaster. */
+  nerdcon_kiosk: {
+    name: 'metal_painted',
+    surface: 'metal',
+    opts: {
+      vertexMasks: true,
+      tint: 0x2b3a63,
+      scale: 0.7,
+      normalStrength: 1.2,
+      weather: [0.5, 0.4, 0.4, 0.5],
+    },
+  },
+  /** The dark board a hand-painted trade sign is lettered onto (blade + frame). */
+  nerdcon_board: {
+    name: 'wood',
+    surface: 'wood',
+    opts: {
+      vertexMasks: true,
+      tint: 0x4a4038,
+      scale: 0.5,
+      normalStrength: 1.3,
+      weather: [0.5, 0.45, 0.5, 0.6],
+    },
+  },
+  /** A dark screen with a faint cyan glow — ATM display. Bloom-friendly. */
+  nerdcon_screen: {
+    name: 'glass',
+    surface: 'glass',
+    opts: {
+      scale: 1.0,
+      three: { emissive: 0x0c343a, emissiveIntensity: 0.7, opacity: 0.92, toneMapped: true },
+    },
+  },
 };

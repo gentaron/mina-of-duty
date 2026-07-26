@@ -18,7 +18,9 @@ import { DEG } from './mathx.js';
 export const WEAPON_DEFS = {
   rifle: {
     id: 'rifle',
-    label: 'M4A1',
+    // Display name only (HUD ammo panel reads def.label via getHudState). The
+    // internal id 'rifle' is the stable key every other subsystem references.
+    label: 'RULES ENGINE MK4',
     class: 'carbine',
     caliber: '5.56x45',
     /* --- fire control --- */
@@ -145,7 +147,7 @@ export const WEAPON_DEFS = {
 
   smg: {
     id: 'smg',
-    label: 'MPX-9',
+    label: 'VELOCITY-9',
     class: 'smg',
     caliber: '9x19',
     rpm: 950,
@@ -210,7 +212,7 @@ export const WEAPON_DEFS = {
 
   pistol: {
     id: 'pistol',
-    label: 'P-19',
+    label: 'SIDECAR',
     class: 'pistol',
     caliber: '9x19',
     rpm: 460,

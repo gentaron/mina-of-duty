@@ -1,4 +1,4 @@
-import { el, setText, setStyle, ease, clamp01, damp } from './util.js';
+import { el, setText, setStyle, setClass, ease, clamp01, damp } from './util.js';
 
 /** Interaction prompt: keycap + verb, with an optional hold-progress rule. */
 export class Prompt {
@@ -65,10 +65,18 @@ export class Banner {
     setStyle(this.root, 'display', 'none');
   }
 
-  show(title, sub, life = 2.1) {
+  /**
+   * @param {string} title
+   * @param {string} sub
+   * @param {number} life  seconds on screen
+   * @param {'kill'|'threat'|'settle'} [kind]  colour variant (see style.js)
+   */
+  show(title, sub, life = 2.1, kind = 'kill') {
     setText(this.title, (title ?? '').toUpperCase());
     setText(this.sub, (sub ?? '').toUpperCase());
     setStyle(this.sub, 'display', sub ? '' : 'none');
+    setClass(this.root, 'threat', kind === 'threat');
+    setClass(this.root, 'settle', kind === 'settle');
     this.life = life;
     this.t = 0;
   }

@@ -195,10 +195,18 @@ export class Agent {
     this.suppression = 0;
     this.reactionTimer = 0;
     this.alertness = 0;
+    /** Difficulty multiplier on how fast awareness builds to a confirmed target.
+     *  1 = the hand-tuned default; scaled by setDifficulty() (see spawnWave). */
+    this.reactionMult = 1;
 
     /* ---------------- combat ---------------- */
     this.weaponRange = 60;
     this.fireRate = this.variantName === 'irregular' ? 8.2 : 10.5;
+    /** 0..1 push/flank/grenade/hold-ground appetite. 0.5 is behaviour-neutral
+     *  (the hand-tuned default); setDifficulty() maps wave intensity onto it. */
+    this.aggression = 0.5;
+    /** Killfeed callsign. Assigned by AiSystem.spawn() from the contract pool. */
+    this.name = opts.name ?? null;
     this.burstLeft = 0;
     this.fireCooldown = 0;
     this.burstCooldown = this.rng.range(0.4, 1.4);
@@ -254,6 +262,34 @@ export class Agent {
     this._muzzleDir = new THREE.Vector3();
 
     this.clip = 'idle';
+  }
+
+  /**
+   * Map a wave difficulty scalar `intensity` ∈ [0,1] onto the existing
+   * perception / accuracy / aggression knobs. Called by AiSystem.spawnWave().
+   * Every field it touches is one the agent already reads every frame, so this
+   * is pure re-tuning, not new behaviour.
+   *
+   *   spread        cone of fire (aim error)   0.055 rad → 0.018 rad
+   *   reactionMult  awareness build-up rate    0.60×    → 1.65×
+   *   fireRate      rounds/sec                  0.82×    → 1.22× of the variant base
+   *   weaponDamage  per round                   12       → 21
+   *   aggression    flank/grenade/hold appetite 0.28     → 1.00
+   *   grenadeCooldown  first-throw delay        long     → short
+   *   viewRange     acquisition distance        50 m     → 64 m
+   */
+  setDifficulty(intensity) {
+    const t = intensity < 0 ? 0 : intensity > 1 ? 1 : intensity;
+    this.intensity = t;
+    this.spread = 0.055 - 0.037 * t;
+    this.reactionMult = 0.6 + 1.05 * t;
+    const base = this.variantName === 'irregular' ? 8.2 : 10.5;
+    this.fireRate = base * (0.82 + 0.4 * t);
+    this.weaponDamage = 12 + 9 * t;
+    this.aggression = 0.28 + 0.72 * t;
+    this.grenadeCooldown = this.rng.range(8, 20) * (1.5 - 0.8 * t);
+    this.viewRange = 50 + 14 * t;
+    return this;
   }
 
   /* ================================================================== */
@@ -312,7 +348,7 @@ export class Agent {
     if (visible) {
       // reaction: fast head-on and close, slow at the edge of vision
       const rate = 1 / Math.max(0.12, 0.16 + dist * 0.0075 + (1 - this.alertness) * 0.28);
-      this.awareness = Math.min(1, this.awareness + dt * rate);
+      this.awareness = Math.min(1, this.awareness + dt * rate * this.reactionMult);
       this.lastKnown.copy(player);
       this.lastKnownAge = 0;
       this.alertness = 1;
@@ -459,8 +495,8 @@ export class Agent {
     const sq = this.squad;
     const dist = this.position.distanceTo(target);
 
-    // wounded and outgunned: fall back
-    if (this.health < 34 && this.stateTime > 1.5 && this.rng.float() < dt * 0.5) {
+    // wounded and outgunned: fall back (more aggressive enemies retreat less)
+    if (this.health < 34 && this.stateTime > 1.5 && this.rng.float() < dt * 0.5 * (1.3 - 0.6 * this.aggression)) {
       const away = this._v
         .copy(this.position)
         .sub(target)
@@ -546,7 +582,7 @@ export class Agent {
       this.stateTime > 4 &&
       this.grenadeCooldown < 0 === false &&
       sq.canFlank(this) &&
-      this.rng.float() < dt * 0.25
+      this.rng.float() < dt * 0.25 * (0.5 + this.aggression)
     ) {
       const side = this.rng.float() < 0.5 ? 1 : -1;
       const perp = this._v.copy(target).sub(this.position).setY(0).normalize();

@@ -46,6 +46,18 @@ import { Agent, STATE } from './agent.js';
 import { Squad } from './squad.js';
 import { GroundShadows } from './grounding.js';
 
+/**
+ * LEGACY CORE SECURITY killfeed callsigns (NERDCON_CONTRACT copy bible). Assigned
+ * per soldier in spawn(); once the pool is exhausted it recycles with a numeric
+ * suffix (COBOL, …, LEDGERLOCK, COBOL-2, BATCH-2, …). The UI killfeed reads the
+ * agent's `.name` straight off the `damage:dealt` / `actor:death` payloads, so a
+ * name on the Agent IS the display name — no separate provider needed.
+ */
+export const CALLSIGNS = [
+  'COBOL', 'BATCH', 'FAX', 'MAINFRAME', 'T+2',
+  'MT-103', 'MICR', 'IVR', 'PDF_STMT', 'LEDGERLOCK',
+];
+
 export class AiSystem {
   static id = 'ai';
   static deps = ['physics', 'world'];
@@ -75,6 +87,11 @@ export class AiSystem {
     this.debugLog = false;
     /** dev: force the garrison to spawn even in deterministic capture runs */
     this.forcePopulate = false;
+    /** running index into CALLSIGNS for the killfeed display name */
+    this._callsignSeq = 0;
+    /** hard ceiling on concurrent live actors, so a runaway caller can never
+     *  blow the frame budget. The game self-limits waves well under this. */
+    this.maxAlive = 20;
     this._navPending = true;
     this.stats = { agents: 0, alive: 0, navMs: 0, coverPts: 0, walkable: 0 };
 
@@ -470,8 +487,21 @@ export class AiSystem {
 
   spawn(variantName, position, yaw = 0, opts = {}) {
     const a = new Agent(this, { variant: variantName, position, yaw, ...opts });
+    if (!a.name) a.name = this.nextCallsign();
     this.agents.push(a);
     return a;
+  }
+
+  /**
+   * Next killfeed callsign from the contract pool, recycling with a numeric
+   * suffix once exhausted. Public so a peer can pre-read the next name if needed;
+   * normally callers just spawn and read `agent.name`.
+   */
+  nextCallsign() {
+    const i = this._callsignSeq++;
+    const base = CALLSIGNS[i % CALLSIGNS.length];
+    const cycle = (i / CALLSIGNS.length) | 0;
+    return cycle === 0 ? base : `${base}-${cycle + 1}`;
   }
 
   /**
@@ -541,6 +571,142 @@ export class AiSystem {
     const s = new Squad(this.rng.fork());
     this.squads.push(s);
     return s;
+  }
+
+  /* ================================================================== */
+  /* wave interface (HOLD THE LEDGER) — called by `src/game`            */
+  /* ================================================================== */
+
+  /**
+   * Spawn a wave of enemies using the same squad / patrol / nav-snap machinery
+   * `populate()` uses, spread across the world's spawn points far from the
+   * player. Reuses everything that makes the soldiers read as a real squad;
+   * only the count and the difficulty are new.
+   *
+   * @param count      soldiers to spawn (clamped to the concurrent budget)
+   * @param intensity  0..1 difficulty; mapped onto each agent via setDifficulty
+   * @param waveIndex  rotates squad composition so successive waves feel different
+   * @returns the number actually spawned
+   */
+  spawnWave({ count = 1, intensity = 0.5, waveIndex = 0 } = {}) {
+    // navigation must exist; build it now if boot deferred it
+    if (this._navPending) this._buildNav();
+    if (!this.grid) return 0;
+    const world = this.ctx.peek('world');
+    const spawns = world?.spawnPoints ?? [];
+    if (!spawns.length) return 0;
+
+    // never let a caller push the live population past the frame budget
+    this._reapCorpses(14);
+    const room = Math.max(0, this.maxAlive - this.aliveCount());
+    const n = Math.min(Math.max(0, Math.floor(count)), room);
+    if (n <= 0) return 0;
+
+    const t = intensity < 0 ? 0 : intensity > 1 ? 1 : intensity;
+    const player = this.playerPosition(this._v3).clone();
+    // far half of the spawn points, ranked by distance — spawn to be found, not
+    // dropped on the player's head. Fall back to all points if none are far.
+    let ranked = spawns
+      .map((s) => ({ s, d: s.position.distanceTo(player) }))
+      .sort((a, b) => b.d - a.d)
+      .filter((e) => e.d > 16);
+    if (!ranked.length) ranked = spawns.map((s) => ({ s, d: 0 })).sort((a, b) => b.d - a.d);
+
+    const variants = ['vanguard', 'irregular', 'breacher'];
+    const per = 4; // soldiers per squad
+    let made = 0;
+    let squad = null;
+    for (let k = 0; k < n; k++) {
+      if (k % per === 0) squad = this.createSquad();
+      const squadIdx = (k / per) | 0;
+      const anchor = ranked[squadIdx % ranked.length].s;
+      const route = this._patrolRoute(anchor, ranked);
+      const p = this._spawnNear(anchor);
+      // rotate which variant leads each wave so composition varies
+      const variant = variants[(waveIndex * 2 + k) % variants.length];
+      const a = this.spawn(variant, p, anchor.yaw + this.rng.signed() * 0.7, { patrol: route });
+      a.setDifficulty(t);
+      squad.add(a);
+      made++;
+    }
+    console.info(`[ai] spawnWave: ${made}/${count} enemies · intensity ${t.toFixed(2)} · wave ${waveIndex}`);
+    return made;
+  }
+
+  /** Live (alive) actor count, computed on demand. */
+  aliveCount() {
+    let n = 0;
+    for (const a of this.agents) if (a.alive) n++;
+    return n;
+  }
+
+  /**
+   * Kill every live soldier through the *normal* death path — so `actor:death`
+   * still fires for each (the game counts kills from it) and the ragdoll +
+   * death FX play exactly as a shot kill would. Used by the game/verifiers to
+   * clear or test wave flow without aiming skill. Returns how many were killed.
+   */
+  killAll() {
+    let n = 0;
+    for (const a of this.agents) {
+      if (!a.alive) continue;
+      a.die(); // die() fills sensible defaults for point/dir/amount
+      n++;
+    }
+    return n;
+  }
+
+  /** Patrol route for a squad: its anchor plus the two nearest other points. */
+  _patrolRoute(anchor, ranked) {
+    const route = [anchor.position.clone()];
+    const others = ranked
+      .filter((e) => e.s !== anchor)
+      .sort(
+        (a, b) =>
+          a.s.position.distanceTo(anchor.position) - b.s.position.distanceTo(anchor.position)
+      )
+      .slice(0, 2);
+    for (const o of others) route.push(o.s.position.clone());
+    return route;
+  }
+
+  /** A walkable spawn position jittered around a spawn anchor, snapped to nav. */
+  _spawnNear(anchor) {
+    const jitterA = this.rng.range(0, Math.PI * 2);
+    const jitterR = this.rng.range(0.8, 3.2);
+    const p = anchor.position
+      .clone()
+      .add(new THREE.Vector3(Math.cos(jitterA) * jitterR, 0, Math.sin(jitterA) * jitterR));
+    const ci = this.grid.nearest(p.x, p.z, anchor.position.y, 6, 1.4);
+    if (ci >= 0) {
+      p.set(
+        this.grid.worldX(ci % this.grid.nx),
+        this.grid.floor[ci],
+        this.grid.worldZ((ci / this.grid.nx) | 0)
+      );
+    } else {
+      p.y = this.groundAt(p.x, p.z, anchor.position.y + 4);
+    }
+    return p;
+  }
+
+  /**
+   * Retire the oldest settled corpses so a long HOLD THE LEDGER run cannot grow
+   * `this.agents` (and its ragdolls) without bound. Only bodies that have been
+   * down long enough to have finished their death beat are disposed; the most
+   * recent `keep` are always left on the ground.
+   */
+  _reapCorpses(keep = 14) {
+    const dead = [];
+    for (const a of this.agents) if (!a.alive) dead.push(a);
+    if (dead.length <= keep) return;
+    dead.sort((x, y) => (y.deadTime ?? 0) - (x.deadTime ?? 0)); // oldest first
+    const remove = new Set();
+    for (let i = 0; i < dead.length - keep; i++) {
+      const a = dead[i];
+      if ((a.deadTime ?? 0) > 3) { a.dispose(); remove.add(a); }
+    }
+    if (remove.size) this.agents = this.agents.filter((a) => !remove.has(a));
   }
 
   /* ================================================================== */

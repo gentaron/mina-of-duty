@@ -525,14 +525,14 @@ export class Minimap {
         const o = objs[i];
         const dx = clamp((o.x - cx) * ppm + half, r + 1, S - r - 1);
         const dy = clamp((o.z - cz) * ppm + half, r + 1, S - r - 1);
-        g.fillStyle = 'rgba(121,210,255,.94)';
+        g.fillStyle = 'rgba(0,229,255,.94)';
         g.strokeStyle = 'rgba(4,14,20,.8)';
         g.lineWidth = 1;
         g.beginPath();
         g.rect(dx - r, dy - r, r * 2, r * 2);
         g.fill();
         g.stroke();
-        g.fillStyle = '#06171f';
+        g.fillStyle = '#03121a';
         g.fillText(o.label ?? '', dx, dy + 0.5);
       }
     }
@@ -550,8 +550,8 @@ export class Minimap {
         g.save();
         g.translate(dx, dy);
         g.rotate(((b.heading ?? 0) * Math.PI) / 180);
-        g.fillStyle = enemy ? 'rgba(255,74,58,.96)' : 'rgba(126,196,255,.95)';
-        g.shadowColor = enemy ? 'rgba(255,60,40,.85)' : 'rgba(120,190,255,.7)';
+        g.fillStyle = enemy ? 'rgba(255,45,120,.96)' : 'rgba(91,140,255,.96)';
+        g.shadowColor = enemy ? 'rgba(255,45,120,.85)' : 'rgba(91,140,255,.7)';
         g.shadowBlur = 6 * u;
         g.beginPath();
         g.moveTo(0, -r * 1.5);

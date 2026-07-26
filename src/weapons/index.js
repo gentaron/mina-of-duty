@@ -39,6 +39,7 @@ import { clamp, clamp01, lerp, damp, DEG } from './mathx.js';
  *   wp.reloading / wp.firing / wp.switching / wp.inspecting
  *   wp.weaponIds          ['rifle','smg','pistol']
  *   wp.setWeapon(id)      draw/holster animated swap
+ *   wp.selectLoadout(id, {animated,refill})  run-start loadout (game subsystem)
  *   wp.nextWeapon()
  *   wp.cycleFireMode()
  *   wp.reload()           no-op if full or empty of reserve
@@ -811,6 +812,35 @@ export class WeaponSystem {
     this.activeId = id;
     this.viewmodel.setActive(id);
     return true;
+  }
+
+  /**
+   * LOADOUT ENTRY POINT for the game subsystem (`ctx.get('weapons')`).
+   *
+   * Sets the player's active weapon at run start. Job -> weaponId mapping (the
+   * game/ui agent owns the job copy, weapons just takes an id):
+   *   FRAUD ANALYST      -> 'rifle'   (RULES ENGINE MK4)
+   *   PAYMENTS ENGINEER  -> 'smg'     (VELOCITY-9)
+   *   COMPLIANCE OFFICER -> 'pistol'  (SIDECAR)
+   *
+   * Defaults to an instant swap (no draw animation) because a run-start loadout
+   * should already be in hand. Pass { animated:true } for the holster/draw swap,
+   * { refill:true } to top the mag + reserve to full (e.g. on continue/restart).
+   *
+   * @param {'rifle'|'smg'|'pistol'} id
+   * @param {{animated?:boolean, refill?:boolean}} [opts]
+   * @returns {boolean} true if `id` is a real weapon and is now (or is becoming) active.
+   */
+  selectLoadout(id, opts = {}) {
+    if (!this.states.has(id)) return false;
+    if (opts.refill) {
+      const s = this.states.get(id);
+      s.mag = s.def.magSize;
+      s.chambered = true;
+      s.reserve = s.def.reserve;
+    }
+    if (opts.animated) return id === this.activeId ? true : this.setWeapon(id);
+    return this.setWeaponImmediate(id);
   }
 
   _runDebug(ctx) {

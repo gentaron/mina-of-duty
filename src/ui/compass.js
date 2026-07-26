@@ -1,4 +1,4 @@
-import { el, setText, setStyle, clamp, Pool, mmss } from './util.js';
+import { el, setText, setStyle, setClass, clamp, clamp01, damp, ease, Pool } from './util.js';
 
 const SPAN_DEG = 120; // degrees visible across the strip
 const STRIP_W = 470; // css px at k=1, must match .ow-compass width
@@ -92,23 +92,62 @@ export class Compass {
   }
 }
 
-/** Slim scoreline under the compass — sells "match in progress" in one line. */
-export class MatchBar {
+/**
+ * HOLD THE LEDGER run bar — the persistent state that replaces the decorative
+ * TDM match bar. Top centre, under the compass:
+ *
+ *        WAVE 3  ·  LEGACY CORE INBOUND
+ *              012,800        ×4
+ *
+ * The score is Loot Gold and TWEENED (damped toward the target) so a settle
+ * bonus reads as a spin-up, never a snap. The multiplier chip pulses on gain
+ * and turns gold near the cap. Both driven from update() so capture frames stay
+ * deterministic — no CSS transitions on the numbers.
+ */
+export class RunBar {
   constructor(parent) {
-    this.root = el('div', 'ow-match', parent);
-    this.us = el('b', 'us', this.root, '43');
-    el('div', 'sep', this.root);
-    this.mode = el('div', null, this.root, 'TDM');
-    this.clock = el('div', 'clock', this.root, '4:12');
-    el('div', 'sep', this.root);
-    this.them = el('b', 'them', this.root, '38');
+    this.root = el('div', 'ow-runbar', parent);
+    const wave = el('div', 'ow-rb-wave', this.root);
+    this.wave = el('b', null, wave, 'WAVE 1');
+    el('span', 'dot', wave);
+    this.threat = el('span', 'thr', wave, 'HOLD THE LEDGER');
+    const main = el('div', 'ow-rb-main', this.root);
+    this.score = el('div', 'ow-rb-score', main, '0');
+    this.mult = el('div', 'ow-rb-mult hidden', main, '×1');
+
+    this.shown = 0;
+    this._lastShown = -1;
+    this._lastMult = 1;
+    this.pulse = 0;
   }
 
-  update(s) {
-    setText(this.us, s.scoreUs ?? 0);
-    setText(this.them, s.scoreThem ?? 0);
-    setText(this.mode, s.mode ?? 'TDM');
-    setText(this.clock, mmss(s.timeLeft ?? 0));
+  update(dt, s) {
+    // ---- tweened score --------------------------------------------------
+    const target = Math.max(0, s.score ?? 0);
+    this.shown = damp(this.shown, target, 9, Math.max(dt, 1e-3));
+    if (Math.abs(target - this.shown) < 0.6) this.shown = target;
+    const disp = Math.round(this.shown);
+    if (disp !== this._lastShown) {
+      this._lastShown = disp;
+      setText(this.score, disp.toLocaleString('en-US'));
+    }
+
+    // ---- wave + threat line ---------------------------------------------
+    setText(this.wave, 'WAVE ' + Math.max(1, s.wave ?? 1));
+    setText(this.threat, s.waveThreat ?? 'HOLD THE LEDGER');
+
+    // ---- multiplier chip ------------------------------------------------
+    const m = Math.max(1, Math.round(s.mult ?? 1));
+    if (m !== this._lastMult) {
+      if (m > this._lastMult) this.pulse = 1; // punch on gain, not on reset
+      this._lastMult = m;
+      setText(this.mult, '×' + m);
+    }
+    setClass(this.mult, 'hidden', m <= 1);
+    setClass(this.mult, 'hot', m >= 5);
+    this.pulse = Math.max(0, this.pulse - dt * 3.6);
+    const sc = 1 + 0.42 * ease.outQuad(clamp01(this.pulse));
+    setStyle(this.mult, 'transform', 'scale(' + sc.toFixed(3) + ')');
   }
 
   dispose() {

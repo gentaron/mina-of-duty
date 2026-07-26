@@ -14,6 +14,7 @@ import {
   groundY,
   isOpen,
 } from './dressing.js';
+import { dressNerdcon } from './nerdcon.js';
 
 /**
  * WORLD — level geometry, the modular building kit, props, set dressing and
@@ -132,6 +133,13 @@ export class WorldSystem {
     dressStreet(A, rng);
     dressBuildings(A, rng, infos);
     scatterDebris(A, rng);
+
+    // NERD OF DUTY re-dress: fintech signage, NerdCon banners, THE LEDGER set
+    // piece and a few flavour props. Additive only — placed last so its own
+    // RNG stream never perturbs the street it sits on. Standalone (canvas-text)
+    // meshes go straight onto root; brackets/plinth/ATM merge through A.
+    this._nerdcon = { meshes: [], geometries: [], materials: [], textures: [] };
+    dressNerdcon(A, this.root, this._nerdcon);
 
     this._addLights(A);
 
@@ -328,6 +336,11 @@ export class WorldSystem {
       // altitude: a weak practical by day, the room's only light after dark.
       for (let i = 0; i < this.bulbs.length; i++) this.bulbs[i].intensity = 5 + 17 * mix;
     }
+
+    // THE LEDGER breathes: a slow emissive pulse on the gold, held low so it is
+    // a subtle shimmer in daylight and a clean bloom source after dusk.
+    const gold = this._ledgerMat ?? (this._ledgerMat = this.A?.mat('nerdcon_gold'));
+    if (gold) gold.emissiveIntensity = 0.28 + 0.12 * Math.sin(ctx.time.elapsed * 1.5);
   }
 
   lateUpdate(dt, ctx) {
@@ -432,6 +445,17 @@ export class WorldSystem {
   }
 
   dispose() {
+    // NERD OF DUTY standalone meshes carry their own geometry/material/texture
+    // (unique canvas-text signage), so free them explicitly — the Assembler
+    // only tracks what it merged/instanced.
+    const nc = this._nerdcon;
+    if (nc) {
+      for (const m of nc.meshes) m.parent?.remove(m);
+      for (const g of nc.geometries) g.dispose();
+      for (const m of nc.materials) m.dispose();
+      for (const t of nc.textures) t.dispose();
+      this._nerdcon = null;
+    }
     this.A?.dispose();
     this.root?.parent?.remove(this.root);
     for (const l of this._ballast ?? []) l.parent?.remove(l);
