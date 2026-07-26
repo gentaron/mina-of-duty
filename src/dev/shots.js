@@ -14,8 +14,11 @@ export const SHOTS = {
     pos: [12, 1.75, 18],
     look: [-4, 2.2, -6],
     fov: 75,
-    time: 16.5,
-    doc: 'Wide establishing shot down the main street — reads overall art direction.',
+    // Tracks the DEFAULT gameplay time (see SkySystem.hour): the establishing
+    // shot must read the shipping dusk grade — signage glow, Ledger presence,
+    // blue-hour sky. sunset(19.2)/night(1.5) stay the dedicated TOD anchors.
+    time: 20.2,
+    doc: 'Wide establishing shot down the main street — reads overall art direction (dusk default).',
   },
   interior: {
     pos: [-8.5, 1.7, 3.2],

@@ -134,7 +134,15 @@ export class SkySystem {
     const q = ctx.config.q;
 
     this.celestial = new Celestial();
-    this.hour = 16.5;
+    // Default GAMEPLAY time of day. NERD OF DUTY holds a fixed dusk / blue-hour
+    // grade: the sun sits ~3-4 deg under the horizon (sunset here is 19.71), so
+    // the sky keeps a deep blue zenith and a warm western remnant while the
+    // street's practicals (world's lamps/bulbs ramp fully on below -2.9 deg) and
+    // the neon/Ledger emissives become the readable key. Combat legibility is
+    // held by those practicals + the elevation-driven indirect budget, not by
+    // daylight. Shots that pin their own time (sunset 19.2, night 1.5, the
+    // 16.5 interior/detail set) override this and are unaffected.
+    this.hour = 20.2;
     this.timeRate = 0;
 
     // ---- weather / atmosphere state ---------------------------------------

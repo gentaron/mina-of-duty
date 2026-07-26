@@ -29,16 +29,23 @@ export const GRADE_PRESETS = {
   // a touch of contrast, mild highlight desaturation.
   default: {
     slope: [1.0, 0.995, 0.985],
-    offset: [-0.004, -0.002, 0.004],
+    offset: [-0.005, -0.002, 0.006],
     power: [1.0, 1.005, 1.02],
-    shadowTint: [-0.001, 0.006, 0.022],
-    highlightTint: [0.030, 0.014, -0.006],
+    // Arcade-Terminal split tone. Shadows lean toward NerdCon blue (#3568FF) so
+    // the dusk street's shade reads cool and the warm practicals / neon / gold
+    // Ledger separate OUT of it instead of drowning in a uniform sepia; the
+    // push is deliberately small (~2 code values in the deepest shadow) so the
+    // daylight-pinned shots keep their neutral shade rather than a blue veil.
+    // Highlights stay warm (toward Loot Gold #FFD700) to protect the lamp pools
+    // and the Ledger bloom.
+    shadowTint: [-0.006, 0.003, 0.032],
+    highlightTint: [0.034, 0.015, -0.010],
     // Display-space saturation. It has to be well over unity because AgX's
     // inset/outset pair is a *desaturating* transform by construction and the
     // shoulder takes another chunk out of anything bright: measured on the
     // 16:30 frame the zenith came out of the tone map at B-R = +15 code values
     // for a sky whose scene radiance is 3:1 blue over red.
-    saturation: 1.20,
+    saturation: 1.22,
     // Global contrast, as a power about a pivot.
     //
     // The pivot is the CODE VALUE that must not move, and it has to sit at
