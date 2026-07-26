@@ -13,7 +13,9 @@ export const ACTIONS = {
   right: ['KeyD', 'ArrowRight'],
   jump: ['Space'],
   crouch: ['ControlLeft', 'KeyC'],
-  prone: ['KeyZ'],
+  // Moved off KeyZ, which is now turnLeft (below) — a held Z would otherwise
+  // both sweep the camera and re-fire the prone toggle every frame.
+  prone: ['KeyB'],
   sprint: ['ShiftLeft'],
   reload: ['KeyR'],
   use: ['KeyF'],
@@ -24,6 +26,10 @@ export const ACTIONS = {
   grenade: ['KeyG'],
   flashlight: ['KeyT'],
   pause: ['Escape'],
+  // Trackpad-friendly camera turn, below WASD. Arrows are already `left`/
+  // `right` (strafe), so this is keyboard-only — no arrow alias.
+  turnLeft: ['KeyZ'],
+  turnRight: ['KeyX'],
 };
 
 export class Input {

@@ -107,6 +107,8 @@ export class PlayerSystem {
 
     this._lookFrame = -1;
     this._prevYaw = 0;
+    /** 0..1 ease-in progress for the keyboard turn (Z/X); resets on release. */
+    this._turnRamp = 0;
 
     // preallocated event payloads
     this._statePayload = {
@@ -227,6 +229,7 @@ export class PlayerSystem {
     const m = this.movement;
     if (!this.controlEnabled) {
       m.yawRate = 0;
+      this._turnRamp = 0;
       return;
     }
     const input = this.ctx.input;
@@ -243,6 +246,22 @@ export class PlayerSystem {
       dYaw -= stick.lookX * rate * dt;
       dPitch -= stick.lookY * rate * dt;
     }
+
+    // Keyboard turn (Z/X) — trackpad-friendly yaw, folded into the same dYaw
+    // the mouse uses so recoil, clamps and the lean-into-turn roll all react
+    // identically. `_turnRamp` eases in over `keyTurn.easeTau` so a tap only
+    // nudges the aim while a hold sweeps at the full rate; it shares `sens` so
+    // ADS slows the keyboard turn by exactly the same amount as the mouse.
+    const turnLeft = input.action('turnLeft');
+    const turnRight = input.action('turnRight');
+    if (turnLeft !== turnRight) {
+      this._turnRamp = approach(this._turnRamp, 1, MOVE.keyTurn.easeTau, dt);
+      const dir = turnLeft ? 1 : -1;
+      dYaw += dir * MOVE.keyTurn.rate * this._turnRamp * sens * dt;
+    } else {
+      this._turnRamp = 0;
+    }
+
     // Mantles are rooted: you keep your head, but the shoulders are committed.
     if (m.mantleMotion.active) {
       dYaw *= 0.55;

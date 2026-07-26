@@ -355,10 +355,10 @@ function runBench() {
     const speed = drive(['KeyW'], 70);
     out.crouch = { eye, speed, stance: p.stance };
     settle();
-    dn('KeyZ'); step(2); up('KeyZ'); step(60);
+    dn('KeyB'); step(2); up('KeyB'); step(60);
     out.prone = { eye: p.eyeHeight, stance: p.stance };
     // back to standing
-    dn('KeyZ'); step(2); up('KeyZ'); step(20);
+    dn('KeyB'); step(2); up('KeyB'); step(20);
     dn('ControlLeft'); step(2); up('ControlLeft'); step(30);
   }
 

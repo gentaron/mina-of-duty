@@ -33,9 +33,11 @@ The gold Ledger stands in the plaza. LEGACY CORE SECURITY, the private security 
 |---|---|
 | `W A S D` / arrows | Move |
 | Mouse | Look · LMB fire · RMB aim |
+| `Z` / `X` | Turn (trackpad-friendly) |
 | `Shift` | Sprint |
 | `Space` | Jump |
 | `Ctrl` / `C` | Crouch |
+| `B` | Prone |
 | `Q` / `E` | Lean |
 | `R` | Reload |
 | `F` | Use |

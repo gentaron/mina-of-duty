@@ -144,6 +144,17 @@ export const MOVE = {
     probeRadius: 0.17,
   },
 
+  /**
+   * Keyboard turn (Z/X) — trackpad users have no mouse-look, so these sweep
+   * yaw at a constant rate through the same channel the mouse uses. `easeTau`
+   * follows the springs.js convention (dt = 2.3·tau reaches ~90 %), so a tap
+   * shorter than ~120 ms only nudges the aim while a hold sweeps at `rate`.
+   */
+  keyTurn: {
+    rate: 140 * DEG, // full sweep once ramped up
+    easeTau: 0.12 / 2.3, // ~90% of `rate` by 120 ms
+  },
+
   /** Stance transition time constants (seconds to 63 %). */
   stanceTau: {
     standCrouch: 0.062,
