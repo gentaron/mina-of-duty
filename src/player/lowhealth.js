@@ -164,6 +164,62 @@ export class LowHealthPass {
     renderer.render(this.scene, this.camera);
   }
 
+  /**
+   * Compile this pass's program before boot finishes, under the FINAL cache
+   * key — instead of on the first frame low health actually needs it.
+   *
+   * The pass is gated by `this.enabled` (see `sync()`), and `render`'s frame
+   * loop skips a disabled pass's `render()` call entirely (`if (p.enabled ===
+   * false) continue`, src/render/index.js) — so a healthy player never once
+   * walks this material through the renderer, and three never compiles its
+   * program. That is the same "invisible until first needed" trap `fx` hit
+   * with its decal mesh (see `src/fx/decals.js`), except there the fix was
+   * to stay in the scene walk via `drawRange(0,0)`. A registered post pass has
+   * no scene walk to stay in — `render` only ever calls `p.render()` on an
+   * enabled pass — so the walk has to be substituted for explicitly, once, at
+   * boot, via `renderer.compile()`. Nothing here changes `enabled` or
+   * `uState`: gating stays exactly as `sync()` left it.
+   *
+   * `renderer.compile()` must run with a non-null render target bound: three
+   * folds `outputColorSpace`/`toneMapping` into the program cache key and
+   * reads both off the *currently bound* target, and this pass only ever
+   * draws into `render`'s internal HDR ping-pong targets, never the canvas.
+   * Binding the canvas (the default with nothing bound) would compile the
+   * variant nobody draws with, and the real one would still compile mid-game.
+   * A bare 1x1 scratch target is enough to get the right key — nothing is
+   * ever rendered into it. Same recipe as `src/fx`'s own `prewarmMaterials()`
+   * and `render`'s own (see src/core/prewarm.js and src/fx/index.js).
+   *
+   * Called by `PlayerSystem.prewarmMaterials()`, which the boot prewarm loop
+   * (`src/core/prewarm.js`) invokes automatically. Draws nothing, spawns
+   * nothing, advances no clock/RNG.
+   *
+   * @param {object} render  the `render` subsystem (`ctx.get('render')`)
+   */
+  prewarmMaterials(render) {
+    const renderer = render?.renderer;
+    if (!renderer) return { ok: false, reason: 'no renderer' };
+    // Patch-before-compile, always — harmless here (a RawShaderMaterial is
+    // never "lit" so `MaterialPatcher.patch()` no-ops on it) but keeps this in
+    // lockstep with the one rule every other prewarm path in this codebase
+    // follows, in case that ever changes.
+    render.patchMaterials?.(this.mesh);
+    const before = renderer.info.programs?.length ?? 0;
+    const prevTarget = renderer.getRenderTarget();
+    const prevFace = renderer.getActiveCubeFace?.() ?? 0;
+    const prevMip = renderer.getActiveMipmapLevel?.() ?? 0;
+    const scratch = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false, stencilBuffer: false });
+    try {
+      renderer.setRenderTarget(scratch);
+      renderer.compile(this.scene, this.camera);
+    } finally {
+      renderer.setRenderTarget(prevTarget, prevFace, prevMip);
+      scratch.dispose();
+    }
+    this._warmed = true;
+    return { ok: true, compiled: (renderer.info.programs?.length ?? 0) - before };
+  }
+
   dispose() {
     this.material.dispose();
     this.geometry.dispose();

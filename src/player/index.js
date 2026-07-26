@@ -309,6 +309,21 @@ export class PlayerSystem {
     this._publishState();
   }
 
+  /**
+   * Compile the low-health pass's program before boot finishes, so the first
+   * frame the player drops below the threshold is not also the frame that
+   * compiles a shader. Picked up automatically by `src/core/prewarm.js`,
+   * which calls `prewarmMaterials()` on every subsystem that implements it,
+   * after every subsystem has `init()`'d (so `lowHealthPass` already exists).
+   *
+   * Spawns nothing, steps no clock/RNG, and leaves `enabled`/`uState` exactly
+   * as `sync()` set them — see `LowHealthPass.prewarmMaterials()`.
+   */
+  prewarmMaterials(ctx = this.ctx) {
+    const render = ctx?.peek?.('render');
+    return this.lowHealthPass?.prewarmMaterials(render) ?? { ok: true };
+  }
+
   /** Keep the AI-facing hitbox on the interpolated capsule. */
   _syncHitbox() {
     if (!this.hitbox) return;
