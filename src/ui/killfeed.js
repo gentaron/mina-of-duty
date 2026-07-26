@@ -27,6 +27,22 @@ function skullIcon(parent) {
  * Killfeed, top right. Newest row on top, six visible, 5.6s dwell.
  * Rows the local player is involved in get the amber treatment so your own
  * kills are readable at a glance without reading the names.
+ *
+ * THEMED NAMES (NERDCON_CONTRACT copy bible). Every LEGACY CORE SECURITY
+ * soldier carries two names: a faction rank — ENFORCER / CONSULTANT / AUDITOR,
+ * `agent.variantDisplay` — and a callsign — COBOL, BATCH, T+2, `agent.name`.
+ * A row renders them together as `AUDITOR ▸ COBOL`, which is the only place the
+ * player ever learns that the three silhouettes they are fighting are three
+ * different job titles. Both spans are built once in the pool factory; nothing
+ * here allocates after construction.
+ *
+ * A row has two shapes:
+ *   kill   [attacker] [weapon icons] [variant ▸] [callsign]
+ *   note   [single centred line]  — score-feed copy that is NOT a kill,
+ *          e.g. `BATCH PROCESSED ×2`. It lives in the feed rather than the
+ *          banner because src/ui/prompts.js Banner is a singleton with no
+ *          queue: a kill banner and the wave banner already clobber each other,
+ *          and a third competitor would make both unreadable.
  */
 export class Killfeed {
   constructor(parent) {
@@ -35,15 +51,22 @@ export class Killfeed {
       6,
       () => {
         const row = el('div', 'ow-kf-row');
+        const av = el('span', 'ow-kf-vv', row, '');
         const a = el('span', 'ow-kf-a', row, 'PLAYER');
         const w = el('span', 'ow-kf-w', row);
         const hs = el('span', 'ow-kf-hs', w);
         skullIcon(hs);
         rifleIcon(w);
+        const vv = el('span', 'ow-kf-vv', row, '');
         const v = el('span', 'ow-kf-v', row, 'ENEMY');
+        const note = el('span', 'ow-kf-note', row, '');
+        row._av = av;
         row._a = a;
+        row._w = w;
+        row._vv = vv;
         row._v = v;
         row._hs = hs;
+        row._note = note;
         return row;
       },
       this.root
@@ -51,18 +74,48 @@ export class Killfeed {
     this.life = 5.6;
   }
 
-  /** @param {object} e { attacker, victim, headshot, mine, attackerFriendly } */
+  /**
+   * @param {object} e
+   *   { attacker, attackerVariant, victim, victimVariant, headshot, mine,
+   *     attackerFriendly }  a kill row, or
+   *   { note, mine }        a single-line score-feed row.
+   */
   push(e) {
     const it = this.pool.acquire();
     it.life = this.life;
     const n = it.node;
     this.root.prepend(n); // newest on top
+
+    const note = e.note ? String(e.note).toUpperCase() : '';
+    const isNote = note.length > 0;
+    setClass(n, 'note', isNote);
+    setStyle(n._note, 'display', isNote ? '' : 'none');
+    for (const part of [n._av, n._a, n._w, n._vv, n._v]) {
+      setStyle(part, 'display', isNote ? 'none' : '');
+    }
+    if (isNote) {
+      setText(n._note, note);
+      setClass(n, 'mine', e.mine !== false);
+      return it;
+    }
+
+    // `▸` is baked into the variant span rather than carried by a third node:
+    // one fewer element per row, and it can never separate from its rank.
+    const av = e.attackerVariant ? String(e.attackerVariant).toUpperCase() + ' ▸' : '';
+    const vv = e.victimVariant ? String(e.victimVariant).toUpperCase() + ' ▸' : '';
+    setText(n._av, av);
+    setStyle(n._av, 'display', av ? '' : 'none');
+    setText(n._vv, vv);
+    setStyle(n._vv, 'display', vv ? '' : 'none');
+
     setText(n._a, (e.attacker ?? 'UNKNOWN').toUpperCase());
     setText(n._v, (e.victim ?? 'UNKNOWN').toUpperCase());
     setStyle(n._hs, 'display', e.headshot ? '' : 'none');
     setClass(n, 'mine', !!e.mine);
     setStyle(n._a, 'color', e.attackerFriendly === false ? 'var(--enemy)' : '');
+    setStyle(n._av, 'color', e.attackerFriendly === false ? 'var(--enemy)' : '');
     setStyle(n._v, 'color', e.attackerFriendly === false ? 'var(--friend)' : '');
+    setStyle(n._vv, 'color', e.attackerFriendly === false ? 'var(--friend)' : '');
     return it;
   }
 

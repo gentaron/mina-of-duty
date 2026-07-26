@@ -57,7 +57,14 @@ const CSS = `
   --blood: #7a0f38;
   --cyan-lit: var(--cyan);
   --friend:#5B8CFF;
-  --enemy: #FF6BA6;
+  /* Threat tint for HUD TEXT (killfeed callsigns, the wave threat line, the
+     delta-to-best miss). Nudged one step brighter than the old #FF6BA6 now the
+     street itself carries environmental magenta neon: at the old value an enemy
+     callsign sitting over a lit magenta sign lost its edge. Same hue as Boss
+     Magenta #FF2D78 (~336°) — it is a brightness step inside the family, not a
+     new colour, and the pure #FF2D78 is untouched wherever it does structural
+     work (minimap blips, the death title, banner rules). */
+  --enemy: #FF7DB2;
   --ok:    var(--green);
 
   --sh: 0 1px 2px rgba(0,0,0,.92), 0 0 calc(10px * var(--k)) rgba(0,0,0,.45);
@@ -374,6 +381,16 @@ const CSS = `
 .ow-kf-a { color: var(--friend); }
 .ow-kf-v { color: var(--enemy); }
 .ow-kf-row.mine .ow-kf-a { color: #fff; }
+/* Faction rank prefix — AUDITOR ▸ before the callsign. Dimmer, tighter and a
+   size down so the eye still lands on the name; the rank is context, not the
+   headline. Same span class does duty on either side of the icons. */
+.ow-kf-vv { color: rgba(240,240,240,.44); letter-spacing:.13em; font-size: calc(11.5px * var(--k)); }
+.ow-kf-row.mine .ow-kf-vv { color: rgba(255,215,0,.60); }
+/* Score-feed note row (BATCH PROCESSED ×2). Loot Gold: it is a gain, and it is
+   deliberately NOT a banner — see the Killfeed class comment. */
+.ow-kf-note { color: var(--gold); font-weight:700; letter-spacing:.2em; }
+.ow-kf-row.note { border-right-color: var(--gold); }
+.ow-kf-row.note::before { background: rgba(26,17,3,.72); }
 .ow-kf-w { display:flex; align-items:center; gap:calc(var(--u) * .8); opacity:.9; }
 .ow-kf-w svg { width: calc(31px * var(--k)); height: calc(12px * var(--k)); display:block;
   filter: drop-shadow(0 1px 1px rgba(0,0,0,.9)); }
@@ -737,13 +754,23 @@ const CSS = `
    only screen allowed the Press Start 2P wordmark (+ the INSERT-COIN hint =
    two arcade elements, the contract cap). pointer-events:auto so the job
    cards catch the click that deploys the run. */
+/* TRANSLUCENT SCRIM, not a wall. The render loop runs in attract (the engine
+   never stops stepping; the game system is simply inert in that state), so behind this
+   overlay is the live cyber-dusk plaza — neon signage, the Ledger, wet asphalt.
+   An opaque gradient here threw all of that away and shipped a title card that
+   could have been a static image.
+   Three layers do the work: the two brand tints, then a soft dark ellipse that
+   sits UNDER the centre column so the wordmark and the job cards keep contract
+   type contrast, then a light overall wash so the street reads through at the
+   edges without the whole frame going grey. */
 .ow-attract {
   position:absolute; inset:0; pointer-events:auto; overflow:hidden;
   display:flex; align-items:center; justify-content:center;
   background:
-    radial-gradient(ellipse 90% 60% at 50% 20%, rgba(53,104,255,.16), transparent 60%),
-    radial-gradient(ellipse 80% 70% at 50% 104%, rgba(255,45,120,.13), transparent 62%),
-    linear-gradient(180deg, #070709 0%, #050505 58%, #09060b 100%);
+    radial-gradient(ellipse 90% 60% at 50% 20%, rgba(53,104,255,.15), transparent 60%),
+    radial-gradient(ellipse 80% 70% at 50% 104%, rgba(255,45,120,.12), transparent 62%),
+    radial-gradient(ellipse 66% 62% at 50% 52%, rgba(3,3,5,.88), rgba(3,3,5,.60) 58%, rgba(3,3,5,.20) 100%),
+    linear-gradient(180deg, rgba(7,7,9,.72) 0%, rgba(5,5,5,.42) 46%, rgba(9,6,11,.76) 100%);
   color: var(--white); text-transform:uppercase;
   opacity:0; will-change:opacity;
 }
@@ -754,9 +781,12 @@ const CSS = `
     rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,.22) 3px);
   background-size: 100% 3px; mix-blend-mode:multiply;
 }
+/* Cabinet vignette. Softened from .72/44px now the scrim is translucent: at the
+   old weight it crushed the street back to black at exactly the edges where the
+   dusk grade is most legible. */
 .ow-attract::after {
   content:''; position:absolute; inset:0; pointer-events:none;
-  box-shadow: inset 0 0 calc(260px * var(--k)) calc(44px * var(--k)) rgba(0,0,0,.72);
+  box-shadow: inset 0 0 calc(230px * var(--k)) calc(20px * var(--k)) rgba(0,0,0,.58);
 }
 .ow-att-inner {
   position:relative; z-index:1;

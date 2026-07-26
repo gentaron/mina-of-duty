@@ -18,8 +18,8 @@ const HEIGHT_RANGE = CAM_Y; // metres of vertical range mapped into the height r
  * After that one bake, per-frame cost is a single drawImage plus blips.
  *
  * Player arrow stays centred and rotates (map is north-up, matching the
- * compass strip); enemy blips are drawn from whatever the ai subsystem
- * publishes via `getHudActors()`.
+ * compass strip); enemy blips come from `ai.agents` via the HUD's
+ * `_collectBlips()` — see the note there about the accessor that never existed.
  */
 export class Minimap {
   constructor(parent, rng) {
@@ -29,7 +29,9 @@ export class Minimap {
     for (const c of ['tl', 'tr', 'bl', 'br']) el('div', 'ow-mm-corner ' + c, this.root);
     el('div', 'ow-mm-n', this.root, 'N');
     const tag = el('div', 'ow-mm-tag', this.root);
-    el('span', null, tag, 'ZONE 07');
+    // The map is of ONE place and the whole game is named after it: the NerdCon
+    // plaza with THE LEDGER in it. "ZONE 07" was the last un-themed HUD string.
+    el('span', null, tag, 'LEDGER PLAZA');
     this.scaleTag = el('span', null, tag, '60M');
 
     this.rng = rng;
@@ -52,6 +54,19 @@ export class Minimap {
     this._sphere = new THREE.Sphere();
     this._probe = new THREE.Vector3();
 
+    /**
+     * Per-frame gradients, cached.
+     *
+     * The view cone (2 stops + a centre stop) and the edge falloff (2 stops)
+     * were being rebuilt on EVERY draw — two CanvasGradient objects and five
+     * addColorStop calls, 60 times a second, for two shapes whose geometry is a
+     * pure function of the canvas size. Rebuilt from _rebuildGradients() when
+     * the pixel size changes, and nowhere else. Pixel-identical by construction.
+     */
+    this._gradSize = 0;
+    this._coneGrad = null;
+    this._edgeGrad = null;
+
     this.resize(1);
   }
 
@@ -64,6 +79,30 @@ export class Minimap {
       this.canvas.height = px;
     }
     this.px = px;
+    if (px !== this._gradSize) this._rebuildGradients(px);
+  }
+
+  /** Size-derived gradients. Called on resize only — never from draw(). */
+  _rebuildGradients(S) {
+    this._gradSize = S;
+    if (!S) {
+      this._coneGrad = null;
+      this._edgeGrad = null;
+      return;
+    }
+    const g = this.g;
+    const half = S * 0.5;
+
+    const cone = g.createRadialGradient(half, half, 2, half, half, S * 0.42);
+    cone.addColorStop(0, 'rgba(222,242,255,.26)');
+    cone.addColorStop(0.7, 'rgba(222,242,255,.075)');
+    cone.addColorStop(1, 'rgba(214,238,255,0)');
+    this._coneGrad = cone;
+
+    const edge = g.createRadialGradient(half, half, S * 0.28, half, half, S * 0.72);
+    edge.addColorStop(0, 'rgba(0,0,0,0)');
+    edge.addColorStop(1, 'rgba(0,0,0,.17)');
+    this._edgeGrad = edge;
   }
 
   /* --------------------------------------------------------------- bake --- */
@@ -500,11 +539,8 @@ export class Minimap {
     const heading = ((s.heading ?? 0) * Math.PI) / 180;
     const fov = (((s.fov ?? 80) * 0.5) * Math.PI) / 180;
     const coneR = S * 0.42;
-    const grad = g.createRadialGradient(half, half, 2, half, half, coneR);
-    grad.addColorStop(0, 'rgba(222,242,255,.26)');
-    grad.addColorStop(0.7, 'rgba(222,242,255,.075)');
-    grad.addColorStop(1, 'rgba(214,238,255,0)');
-    g.fillStyle = grad;
+    if (this._gradSize !== S) this._rebuildGradients(S);
+    g.fillStyle = this._coneGrad;
     g.beginPath();
     g.moveTo(half, half);
     g.arc(half, half, coneR, -Math.PI / 2 + heading - fov, -Math.PI / 2 + heading + fov);
@@ -586,10 +622,7 @@ export class Minimap {
     g.restore();
 
     // edge falloff so the map sinks into the frame instead of ending abruptly
-    const vg = g.createRadialGradient(half, half, S * 0.28, half, half, S * 0.72);
-    vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(1, 'rgba(0,0,0,.17)');
-    g.fillStyle = vg;
+    g.fillStyle = this._edgeGrad;
     g.fillRect(0, 0, S, S);
 
     g.restore();

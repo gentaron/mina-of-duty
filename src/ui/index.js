@@ -18,10 +18,22 @@ import { BoardsScreen } from './boards.js';
 import { CabinetMode } from './cabinet.js';
 import { shareRun, copyLink } from './sharecard.js';
 
-/** Enemy callsigns (LEGACY CORE SECURITY) used when an event omits a name. */
-const CALLSIGNS = ['COBOL', 'BATCH', 'FAX', 'MAINFRAME', 'T+2', 'MT-103', 'MICR', 'IVR', 'PDF_STMT', 'LEDGERLOCK'];
+/**
+ * NO CALLSIGN TABLE HERE — deliberately.
+ *
+ * There used to be a copy of the contract's ten LEGACY CORE SECURITY callsigns
+ * in this file, duplicating `CALLSIGNS` in src/ai/index.js, and it existed only
+ * to invent a name when an event didn't carry one. Every live soldier already
+ * carries its own `agent.name` (callsign, assigned in AiSystem.spawn) and
+ * `agent.variantDisplay` (faction rank: ENFORCER / CONSULTANT / AUDITOR), and
+ * both ride on the payloads this subsystem receives. The killfeed reads those.
+ * If a payload has no name, the row says so or is dropped — it does not guess.
+ */
 
 const MAX_BLIPS = 48;
+
+/** How stale the last enemy round may be and still be blamed for your death. */
+const ATTACKER_MEMORY_S = 6;
 
 /**
  * submit-score error codes → Arcade Terminal copy. Terse, uppercase, and it
@@ -58,7 +70,8 @@ const SUBMIT_ERRORS = {
  *   ui.hitmarker(kind)                  'hit' | 'armour' | 'head' | 'kill'
  *   ui.damageNumber(worldPos, n, kind)  'hit' | 'hs' | 'armour' | 'kill'
  *   ui.hurt(amount, dirX, dirZ)         directional arc + flash + flinch
- *   ui.killfeed.push({attacker,victim,headshot,mine,attackerFriendly})
+ *   ui.killfeed.push({attacker,attackerVariant,victim,victimVariant,headshot,
+ *                     mine,attackerFriendly})  |  ui.killfeed.push({note})
  *   ui.banner.show(title, sub, life)    kill / objective confirmation
  *   ui.setPrompt({key,text,sub,progress}) / ui.clearPrompt()
  *   ui.setObjectives([{position,label,name}])
@@ -78,11 +91,12 @@ const SUBMIT_ERRORS = {
  *   player.getHudState()  -> { health, maxHealth, armour, maxArmour, regen,
  *                              move, sprint, crouch, ads, airborne, position }
  *                            (or plain `player.health` / `player.position`)
- *   ai.getHudActors()     -> [{ position, alive, friendly, heading }]
+ *   ai.agents             -> live Agent[]; read `.alive`, `.position`, `.yaw`,
+ *                            `.name` (callsign) and `.variantDisplay` (rank)
  *   audio.playUi(id, gain) | audio.play(id) — hit ticks, heartbeat, warnings
  *
  * Events consumed: weapon:fire, weapon:reload, damage:dealt, damage:taken,
- * actor:death, player:state, explosion, resize.
+ * player:death, player:state, explosion, resize, game:*.
  * Events emitted:  ui:pause, ui:quality, ui:sensitivity, ui:fov, ui:setting.
  */
 export class UiSystem {
@@ -210,7 +224,13 @@ export class UiSystem {
     this.hudVisible = 1;
     this.hudTarget = 1;
     this._lastRaw = ctx.time.raw;
+    /** Time of your last confirmed kill. Read by nothing right now — kept
+     *  because it is the honest hook for any future "kills within N seconds"
+     *  feedback, and it costs one number. */
     this._lastKillAt = -10;
+    /** Freshest enemy that put a round in the player — the death row's source. */
+    this._lastAttacker = null;
+    this._lastAttackerAt = -1e9;
     this._regenTimer = 0;
     this._hadPointerLock = false;
     this._bakeFrame = 0;
@@ -258,7 +278,17 @@ export class UiSystem {
       // The payload means "damage dealt TO e.target". `ai` uses it for enemy
       // rounds that connect with the player, which must not draw a hitmarker or
       // a "YOU killed" killfeed row — that arrives as `damage:taken` below.
-      if (this._isPlayerTarget(e.target)) return;
+      if (this._isPlayerTarget(e.target)) {
+        // …but it IS the only truthful attacker data in the game: src/ai puts
+        // the firing soldier on the round it sends at you (`source: agent`).
+        // Stash the freshest one so the death row can name who actually did it
+        // instead of inventing somebody.
+        if (e.source) {
+          this._lastAttacker = e.source;
+          this._lastAttackerAt = ctx.time.elapsed;
+        }
+        return;
+      }
       const kind = e.killed ? 'kill' : e.headshot ? 'head' : e.armour ? 'armour' : 'hit';
       this.hitmarker(kind);
       if (e.point) {
@@ -270,9 +300,12 @@ export class UiSystem {
       }
       if (e.killed) {
         this._lastKillAt = ctx.time.elapsed;
+        // `AUDITOR ▸ COBOL`: the faction rank and the callsign, both read off
+        // the actual Agent that just died. No fallback rotation.
         this.killfeed.push({
           attacker: 'YOU',
-          victim: e.target?.name ?? e.name ?? this._callsign(),
+          victim: e.target?.name ?? e.name ?? null,
+          victimVariant: e.target?.variantDisplay ?? null,
           headshot: !!e.headshot,
           mine: true,
         });
@@ -298,13 +331,51 @@ export class UiSystem {
       this.hurt(amount, dx, dz);
     });
 
-    on('actor:death', (e) => {
-      if (ctx.time.elapsed - this._lastKillAt < 0.3) return; // already credited
+    // ------------------------------------------------------------------ //
+    // THERE IS NO `actor:death` KILLFEED ROW, AND THAT IS THE FIX.
+    //
+    // What used to be here read `e?.by?.name` and fell back to a rotating
+    // callsign. Both halves were wrong:
+    //
+    //  1. `actor:death` has no `by` field. Its payload is
+    //     `{actor, point, impulse, headshot}` (src/ai/agent.js:943), so the
+    //     `??` fallback fired 100% of the time and printed a LEGACY CORE
+    //     SECURITY soldier credited with a kill it did not make.
+    //  2. Its "already credited" guard could never work. `ai` emits
+    //     `actor:death` from *inside* its own `damage:dealt` handler, and the
+    //     registry topo-sorts `ai` ahead of `ui`, so the death arrived here
+    //     BEFORE this subsystem's `damage:dealt` handler had run for the same
+    //     round — `_lastKillAt` was always stale. Every player kill therefore
+    //     produced two rows: an invented one, and the correct `YOU` row.
+    //
+    // Nothing in the payload identifies a killer and no other source for one
+    // exists, so the row is gone rather than guessed. Kills you make are
+    // credited from `damage:dealt` above (which knows it was you); the round
+    // that kills YOU is credited from its `source` on `player:death` below. If
+    // `actor:death` ever grows a real attacker field, render THAT here — do
+    // not reintroduce a rotation.
+    // ------------------------------------------------------------------ //
+
+    on('player:death', () => {
+      const a = this._lastAttacker;
+      const fresh = a && ctx.time.elapsed - this._lastAttackerAt < ATTACKER_MEMORY_S;
+      this._lastAttacker = null;
+      if (!fresh || !a.name) return; // fell, drowned, unattributable — say nothing
       this.killfeed.push({
-        attacker: e?.by?.name ?? this._callsign(),
-        victim: e?.actor?.name ?? 'OPERATOR',
+        attacker: a.name,
+        attackerVariant: a.variantDisplay ?? null,
+        victim: 'YOU',
         attackerFriendly: false,
+        mine: true,
       });
+    });
+
+    // Double kill inside the 1.2s window (src/game/scoring.js). Contract copy:
+    // `BATCH PROCESSED`. It lands in the feed, not the banner — see Killfeed.
+    on('game:multiKill', (e) => {
+      const n = Math.max(2, Math.round(e?.count ?? 2));
+      this.killfeed.push({ note: n > 2 ? 'BATCH PROCESSED ×' + n : 'BATCH PROCESSED', mine: true });
+      this.sfx('hit_kill', 0.9);
     });
 
     on('explosion', (e) => {
@@ -429,12 +500,6 @@ export class UiSystem {
   }
 
   /* ------------------------------------------------------ game loop glue -- */
-
-  /** Rotating LEGACY CORE SECURITY callsign — deterministic, no Math.random. */
-  _callsign() {
-    this._csi = (this._csi ?? 0) + 1;
-    return CALLSIGNS[this._csi % CALLSIGNS.length];
-  }
 
   _resetRunState() {
     const s = this.state;
@@ -842,7 +907,15 @@ export class UiSystem {
     const heading = (Math.atan2(fx, -fz) * 180) / Math.PI;
 
     // ---- widgets ---------------------------------------------------------
-    const hudGoal = this.hudTarget * (this.menu.open ? 0.15 : 1);
+    // The attract screen is a translucent SCRIM now (so the dusk plaza reads
+    // through it), which means it no longer hides the gameplay chrome behind
+    // it: minimap, compass, vitals and the ammo panel were all showing through
+    // the title card. They are match furniture and have no business on the
+    // title, so the HUD is faded out for the whole time a title-class screen is
+    // up. The death/game-over cards keep the old behaviour — they are modal
+    // cards over a run in progress and the HUD reading through them is correct.
+    const titleScreen = this.attract.open || this.boards.open;
+    const hudGoal = this.hudTarget * (this.menu.open ? 0.15 : 1) * (titleScreen ? 0 : 1);
     this.hudVisible = damp(this.hudVisible, hudGoal, 10, rawDt);
     setStyle(this.chromeLayer, 'opacity', this.hudVisible.toFixed(3));
     setStyle(this.worldLayer, 'opacity', this.hudVisible.toFixed(3));
@@ -897,21 +970,36 @@ export class UiSystem {
     this.minimap.draw(this._mmState);
   }
 
+  /**
+   * Contacts for the minimap.
+   *
+   * READ-ONLY view of `ai.agents` — the live Agent array. The two accessors
+   * this used to try, `ai.getHudActors()` and `ai.actors`, have never existed
+   * on AiSystem, so `Array.isArray(list)` was false on every frame and the
+   * minimap has been showing zero contacts outside demo mode since the fork.
+   * Nothing here mutates an agent: it copies four numbers per contact into the
+   * preallocated blip ring.
+   */
   _collectBlips() {
     if (this.demo?.active) return; // demo drives its own contacts
-    const ai = this.ctx.peek('ai');
-    const list = typeof ai?.getHudActors === 'function' ? ai.getHudActors() : ai?.actors ?? null;
+    const list = this.ctx.peek('ai')?.agents;
     if (!Array.isArray(list)) return;
     let n = 0;
     for (let i = 0; i < list.length && n < MAX_BLIPS; i++) {
       const a = list[i];
-      const p = a?.position ?? a?.pos;
-      if (!p || a.alive === false || a.dead === true) continue;
+      if (!a || a.alive !== true) continue; // dead bodies linger in the array
+      const p = a.position;
+      if (!p) continue;
       const b = this._blips[n++];
       b.x = p.x;
       b.z = p.z;
       b.kind = a.friendly ? 'friend' : 'enemy';
-      b.heading = a.heading ?? (a.yaw !== undefined ? (a.yaw * 180) / Math.PI : 0);
+      // Agent yaw is radians about +Y with forward = (sin y, 0, cos y). The map
+      // wants the same north-up degrees the player arrow uses, which is
+      // atan2(forwardX, -forwardZ) — so run the agent's forward through the
+      // identical expression rather than trusting a raw radian-to-degree cast.
+      const y = a.yaw ?? 0;
+      b.heading = (Math.atan2(Math.sin(y), -Math.cos(y)) * 180) / Math.PI;
     }
     this._blipCount = n;
   }

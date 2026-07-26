@@ -97,6 +97,26 @@ const SELF_WARMING = new Set(['fx']);
  */
 const RENDER_SHADOW_WARM = false;
 
+/**
+ * Loading-screen captions for the pre-warm phase. The subsystem hooks are the
+ * bulk of the wall clock here (`render` + `world` + `ai` prewarmMaterials), and
+ * before they were reported the bar sat frozen at 78% for the whole of it —
+ * the single longest dead stretch of the load. Naming what is compiling turns
+ * that into the most legible part of the boot.
+ */
+const PREWARM_CAPTIONS = {
+  render: 'COMPILING THE POST CHAIN',
+  world: 'COMPILING THE PLAZA',
+  ai: 'COMPILING LEGACY CORE SECURITY',
+  weapons: 'COMPILING THE ARMOURY',
+};
+const PREWARM_CAPTION_DEFAULT = 'COMPILING SHADERS';
+
+/**
+ * @param opts.onProgress  `(fraction01, detail?) => void`. Called at every step
+ *   boundary with a monotonic 0..1 through THIS function only; src/main.js maps
+ *   it onto its own band of the boot bar. `detail` is an optional caption.
+ */
 export async function prewarm(engine, { onProgress = () => {}, transients = false, drawFrames = false } = {}) {
   const t0 = performance.now();
   const render = engine.ctx.peek('render');
@@ -170,10 +190,34 @@ export async function prewarm(engine, { onProgress = () => {}, transients = fals
 
   const yieldFrame = () => new Promise((r) => requestAnimationFrame(r));
 
+  // The subsystem hooks are discovered up front rather than between the two
+  // passes, purely so they can be counted into the progress denominator: a bar
+  // that reaches 89% and then stops for five seconds is worse than no bar.
+  //
+  // render goes first, deliberately: it patches every lit material with the
+  // CSM/AO/SSR injection, and a program compiled off an UNPATCHED material is
+  // thrown away by the first frame that walks the scene.
+  const hooks = [];
+  const renderSys = engine.registry.peek?.('render');
+  if (renderSys && typeof renderSys.prewarmMaterials === 'function') hooks.push(renderSys);
+  for (const sys of engine.registry.ordered ?? []) {
+    if (sys === renderSys) continue;
+    if (SELF_WARMING.has(sys.constructor?.id)) continue;
+    if (typeof sys.prewarmMaterials === 'function') hooks.push(sys);
+  }
+
+  // Real frames between the heavy steps, so the loading bar can actually paint.
+  // Free: the engine loop has not started yet (and in lockstep never will), so
+  // a rAF here advances no simulation state at all — `engine._last` is restamped
+  // in the finally block regardless. Off under ?capture=1 so the deterministic
+  // path pays nothing for it.
+  const paint = !engine.config?.deterministic;
+
   try {
     let step = 0;
-    const totalSteps = WARM_POSES.length * 2 + (transients ? transientStages.length : 0) + 1;
-    const tick = () => onProgress(Math.min(1, ++step / totalSteps));
+    const totalSteps =
+      WARM_POSES.length * 2 + hooks.length + (transients ? transientStages.length : 0) + 1;
+    const tick = (detail) => onProgress(Math.min(1, ++step / totalSteps), detail);
 
     // Pass 1: compile the static world from each pose, with the depth/shadow
     // variants reached by drawing a real frame at that pose.
@@ -182,7 +226,8 @@ export async function prewarm(engine, { onProgress = () => {}, transients = fals
       cam.lookAt(...p.look);
       cam.updateMatrixWorld(true);
       await compile();
-      tick();
+      tick(PREWARM_CAPTION_DEFAULT);
+      if (paint) await yieldFrame();
       // Drawing real frames here would reach the depth/shadow and post-processing
       // variants too, but engine.step() advances every subsystem's internal state
       // (AI transforms, exposure adaptation, particle cursors) and NONE of that is
@@ -194,7 +239,7 @@ export async function prewarm(engine, { onProgress = () => {}, transients = fals
         engine.step();
         await yieldFrame();
       }
-      tick();
+      tick(PREWARM_CAPTION_DEFAULT);
     }
 
     // Pass 1b: THE SUBSYSTEM HOOKS. This is the `prewarmMaterials()` contract the
@@ -225,20 +270,15 @@ export async function prewarm(engine, { onProgress = () => {}, transients = fals
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld(true);
 
-    // render goes first, deliberately: it patches every lit material with the
-    // CSM/AO/SSR injection, and a program compiled off an UNPATCHED material is
-    // thrown away by the first frame that walks the scene.
-    const hooks = [];
-    const renderSys = engine.registry.peek?.('render');
-    if (renderSys && typeof renderSys.prewarmMaterials === 'function') hooks.push(renderSys);
-    for (const sys of engine.registry.ordered ?? []) {
-      if (sys === renderSys) continue;
-      if (SELF_WARMING.has(sys.constructor?.id)) continue;
-      if (typeof sys.prewarmMaterials === 'function') hooks.push(sys);
-    }
+    // (The hook list itself is built above, so it can be counted into the
+    // progress denominator — see the comment there.)
     const hookResults = {};
     for (const sys of hooks) {
       const id = sys.constructor?.id ?? '?';
+      // Caption FIRST, then a real frame, then the block: the repaint shows the
+      // name of the thing that is about to take a second and a half.
+      onProgress(Math.min(1, step / totalSteps), PREWARM_CAPTIONS[id] ?? PREWARM_CAPTION_DEFAULT);
+      if (paint) await yieldFrame();
       try {
         const arg = sys === renderSys ? { post: true, shadow: RENDER_SHADOW_WARM } : engine.ctx;
         hookResults[id] = (await sys.prewarmMaterials(arg)) ?? { ok: true };
@@ -246,6 +286,7 @@ export async function prewarm(engine, { onProgress = () => {}, transients = fals
         // An optional hook must never be able to block boot.
         hookResults[id] = { ok: false, reason: String(err?.message ?? err) };
       }
+      tick(PREWARM_CAPTIONS[id] ?? PREWARM_CAPTION_DEFAULT);
     }
     engine.__prewarmHooks = hookResults;
 
@@ -258,9 +299,9 @@ export async function prewarm(engine, { onProgress = () => {}, transients = fals
       await compile();
       engine.step();
       await yieldFrame();
-      tick();
+      tick(PREWARM_CAPTION_DEFAULT);
     }
-    tick();
+    tick(PREWARM_CAPTION_DEFAULT);
   } finally {
     // Restore exactly what we found. Any residue here would be a visual change.
     for (const reset of (transients ? [

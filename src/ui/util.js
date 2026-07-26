@@ -49,8 +49,54 @@ export function svg(tag, attrs, parent) {
   return n;
 }
 
-/** Write textContent only when it actually changed — avoids layout thrash. */
+/**
+ * Property-name caches for setStyle/setClass.
+ *
+ * MEASURED: the naive `'_ows_' + prop` built a fresh string on EVERY call, and
+ * the HUD calls setStyle 4-5.5k times a second (every pooled killfeed row,
+ * hitmarker, damage number and arc writes transform + opacity per frame). That
+ * is thousands of short-lived strings a second for a value that only ever takes
+ * a couple of dozen distinct forms. The Map lookup is a hash of a string that
+ * already exists; nothing is allocated on the hot path.
+ */
+const STYLE_KEYS = new Map();
+const CLASS_KEYS = new Map();
+
+function styleKey(prop) {
+  let k = STYLE_KEYS.get(prop);
+  if (k === undefined) {
+    k = '_ows_' + prop;
+    STYLE_KEYS.set(prop, k);
+  }
+  return k;
+}
+
+function classKey(cls) {
+  let k = CLASS_KEYS.get(cls);
+  if (k === undefined) {
+    k = '_owc_' + cls;
+    CLASS_KEYS.set(cls, k);
+  }
+  return k;
+}
+
+/**
+ * Write textContent only when it actually changed — avoids layout thrash.
+ *
+ * The raw value is cached alongside the rendered string so an unchanged NUMBER
+ * (score, ammo, wave — every counter on the HUD, every frame) never reaches
+ * String(). Both caches are kept: `_owRaw` short-circuits the common case,
+ * `_owText` still guards the 3 vs '3' collision.
+ */
 export function setText(node, value) {
+  // `_owText !== undefined` is the "has ever been written" test. Without it a
+  // first call with an undefined value would short-circuit on the raw cache
+  // (undefined === undefined) and silently leave whatever text the element was
+  // constructed with — a different behaviour from the old code, which wrote the
+  // string "undefined". Neither is desirable, but this is not the change to
+  // smuggle it in with.
+  if (node._owText !== undefined && node._owRaw === value) return;
+  node._owRaw = value;
   const s = String(value);
   if (node._owText !== s) {
     node._owText = s;
@@ -60,7 +106,7 @@ export function setText(node, value) {
 
 /** Write any style property only on change. */
 export function setStyle(node, prop, value) {
-  const key = '_ows_' + prop;
+  const key = styleKey(prop);
   if (node[key] !== value) {
     node[key] = value;
     node.style.setProperty(prop, value);
@@ -68,7 +114,7 @@ export function setStyle(node, prop, value) {
 }
 
 export function setClass(node, cls, on) {
-  const key = '_owc_' + cls;
+  const key = classKey(cls);
   if (node[key] !== on) {
     node[key] = on;
     node.classList.toggle(cls, on);

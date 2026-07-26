@@ -94,6 +94,7 @@ Emit and listen via `ctx.events`. Payloads are plain objects. The canonical set:
 | `boot:progress` | `{ phase, pct, detail?, ms? }` — pct 0..1 monotonic across boot | engine |
 | `boot:done` | `{ totalMs }` | engine |
 | `ui:attract` | `{}` — return to attract state (cabinet idle reset) | ui |
+| `game:multiKill` | `{ count }` — kills inside the 1.2s combo window (killfeed `BATCH PROCESSED`) | game |
 
 If you need an event that is not listed, add a row here in the same commit.
 

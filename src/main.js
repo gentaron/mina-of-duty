@@ -1,4 +1,4 @@
-import { Engine } from './core/engine.js';
+import { Engine, BOOT_BANDS } from './core/engine.js';
 import { createConfig } from './core/config.js';
 
 import { RenderSystem } from './render/index.js';
@@ -16,6 +16,9 @@ import { GameSystem } from './game/index.js';
 
 import { installShotApi } from './dev/shots.js';
 import { prewarm } from './core/prewarm.js';
+
+/** Wall clock at the first line of the module graph — `boot:done.totalMs`. */
+const bootT0 = performance.now();
 
 const params = new URLSearchParams(location.search);
 const capture = params.get('capture') === '1';
@@ -49,10 +52,21 @@ engine
   .add(AudioSystem)
   .add(GameSystem);
 
+// ---------------------------------------------------------------- loading --
+// The loading screen is plain DOM in index.html, driven by an inline classic
+// script that has already painted by the time this module evaluates. All this
+// side does is forward the engine's boot events onto it. `window.__BOOT__` is
+// always defined (the inline script installs a no-op stub under ?capture=1),
+// but it is optional-chained anyway so a stripped index.html cannot break boot.
+const boot = window.__BOOT__ ?? null;
+engine.events.on('boot:progress', (e) => boot?.set?.(e?.pct ?? 0, e?.detail));
+engine.events.on('boot:done', () => boot?.done?.());
+
 try {
   await engine.init();
 } catch (err) {
   console.error('[boot] init failed', err);
+  boot?.fail?.();
   document.body.insertAdjacentHTML(
     'beforeend',
     `<pre style="position:fixed;inset:0;padding:2rem;color:#f66;background:#000;
@@ -78,11 +92,30 @@ const shotApi = installShotApi(engine, { capture, lockstep });
 // lockstep in src/dev/shots.js; (2) `will-change: transform` on the compass strip
 // cached a composited-layer raster taken at a wall-clock-dependent moment — fixed
 // in src/ui/style.js.
-const warmup = params.get('prewarm') === '0' ? { ok: false, reason: 'disabled by ?prewarm=0' } : await prewarm(engine);
+const warmup =
+  params.get('prewarm') === '0'
+    ? { ok: false, reason: 'disabled by ?prewarm=0' }
+    : await prewarm(engine, {
+        // prewarm's own step tick (4 poses × 2, plus one per subsystem
+        // prewarmMaterials hook, plus a final), mapped onto the second band of
+        // the bar. It supplies its own captions for the hooks, which is where
+        // most of that second actually goes.
+        onProgress: (p, detail) =>
+          engine.events.emit('boot:progress', {
+            phase: 'prewarm',
+            pct: BOOT_BANDS.init + Math.min(1, Math.max(0, p)) * BOOT_BANDS.prewarm,
+            detail: detail ?? 'COMPILING SHADERS',
+          }),
+      });
 console.info('[boot] prewarm', warmup);
 window.__PREWARM__ = warmup;
 
 engine.start();
+
+// Published BEFORE the warm-frame hold below, not after it: the hold now awaits
+// a dozen frames, and every external driver (tools/perf.mjs, tools/demo.mjs,
+// the dev overlay) reaches for window.__ENGINE__ as soon as the loop is up.
+window.__ENGINE__ = engine;
 
 // Capture harness handshake: only flag ready once a frame has actually landed.
 //
@@ -91,22 +124,53 @@ engine.start();
 // then raise __READY__; the shot is therefore always applied at engine frame 3, no
 // matter how long boot (or pre-warm) took in wall-clock terms.
 const BOOT_FRAMES = 3;
+
+/**
+ * Frames the loading screen is HELD for after `engine.start()`.
+ *
+ * Hiding the bar at start() was the wrong shape: measured, ~1.1 s of long tasks
+ * land after it — fx self-warms on frame 2, the world stabilises its visible
+ * light count, and the first real draws of every pass happen here. Dropping the
+ * overlay then hands the player 1.1 s of frozen first frame instead of 1.1 s of
+ * a bar that is still moving. So the last 20% of the bar IS those frames.
+ *
+ * Not applied under ?capture=1: the shot harness raises __READY__ at engine
+ * frame 3 exactly, and every existing shot is keyed to that frame index.
+ */
+const WARM_FRAMES = 12;
+
+const bootDone = () =>
+  engine.events.emit('boot:done', { totalMs: Math.round(performance.now() - bootT0) });
+
 if (lockstep) {
   await shotApi.pump(BOOT_FRAMES);
   window.__READY__ = true;
-} else {
+  bootDone();
+} else if (capture) {
   let warm = 0;
   const readyProbe = () => {
     if (++warm >= BOOT_FRAMES) {
       window.__READY__ = true;
+      bootDone();
       return;
     }
     requestAnimationFrame(readyProbe);
   };
   requestAnimationFrame(readyProbe);
+} else {
+  for (let i = 1; i <= WARM_FRAMES; i++) {
+    await new Promise((r) => requestAnimationFrame(r));
+    engine.events.emit('boot:progress', {
+      phase: 'warmup',
+      pct: BOOT_BANDS.init + BOOT_BANDS.prewarm + (i / WARM_FRAMES) * BOOT_BANDS.warm,
+      detail: 'FINAL RECONCILIATION',
+    });
+    // Identical __READY__ semantics to the old rAF probe: three frames after
+    // start(), whatever the loading screen is doing.
+    if (i === BOOT_FRAMES) window.__READY__ = true;
+  }
+  bootDone();
 }
-
-window.__ENGINE__ = engine;
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => engine.dispose());

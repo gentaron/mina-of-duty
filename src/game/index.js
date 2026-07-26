@@ -62,6 +62,68 @@ const DEFAULT_JOB = 'fraud-analyst';
 const BEST_KEY = 'nod.best';
 const BEST_WAVE_KEY = 'nod.bestWave';
 
+/** Scoring's internal channel names → the contract's event names. */
+const SCORING_EVENTS = {
+  score: 'game:score',
+  mult: 'game:mult',
+  // ADDITIVE (beyond the contract's canonical set): a double kill inside the
+  // 1.2 s window. Consumed by src/ui, which renders the contract's
+  // `BATCH PROCESSED` copy into the KILLFEED — deliberately not the banner,
+  // which is a singleton with no queue and is already contended by the wave
+  // banner and the per-kill score banner.
+  multiKill: 'game:multiKill',
+};
+
+/* ==================================================================== */
+/* THE SETTLE BEAT                                                      */
+/* ==================================================================== */
+
+/**
+ * THE LEDGER, in level coordinates. Authored at `buildLedger(A, rng, -1.7, 8.6)`
+ * in src/world/nerdcon.js — the plaza centrepiece, just west of the street
+ * centreline. Converted to world space through the world's own public
+ * `levelToWorld()` so the level transform stays owned by src/world; only these
+ * two authored numbers are mirrored here, and they are scenery constants.
+ */
+const LEDGER_LEVEL_X = -1.7;
+const LEDGER_LEVEL_Z = 8.6;
+
+/** Loot Gold #FFD700 in rough linear space, plus the hotter core it decays from. */
+const GOLD = { r: 1.0, g: 0.68, b: 0.05 };
+
+/**
+ * A spawn descriptor for `fx.emitLit`.
+ *
+ * fx's own call sites use the shared `resetSpawn()` singleton out of
+ * src/fx/particles.js, but importing another subsystem's module is exactly what
+ * ARCHITECTURE.md rule 2 forbids — so this is our own copy of the same field
+ * set, built ONCE and refilled in place. `ParticleLayer.emit()` only ever reads
+ * named properties off it, so a structurally identical object is a drop-in.
+ * Keep in sync with SP in src/fx/particles.js if that gains a field.
+ */
+function makeSpawn() {
+  return {
+    x: 0, y: 0, z: 0,
+    vx: 0, vy: 0, vz: 0,
+    size0: 0.2, size1: 0.3, sizeCurve: 1,
+    life: 1, delay: 0, drag: 1.4, gravity: 0,
+    rot: 0, spin: 0, stretch: 0,
+    r0: 1, g0: 1, b0: 1, i0: 1,
+    r1: 1, g1: 1, b1: 1, i1: 0,
+    tile: 0, soft: 0.4, alpha: 1, alphaCurve: 1,
+    turb: 0, turbFreq: 1, seed: 0, flags: 0,
+  };
+}
+
+/**
+ * Particle atlas tiles, from src/fx/atlas.js. Mirrored as literals for the same
+ * no-cross-import reason as makeSpawn(). CHIP + SPLINTER are the flat angular
+ * flakes the impact code throws off masonry; tinted gold and given a slow fall
+ * they read as paper — the ledger shedding pages.
+ */
+const TILE_CHIP = 8;
+const TILE_SPLINTER = 9;
+
 export class GameSystem {
   static id = 'game';
   // init after the systems we drive so their event handlers are wired first.
@@ -110,9 +172,15 @@ export class GameSystem {
     /** Last settled run, for the initials/share UI. Null until the first game over. */
     this.lastRun = null;
 
-    this.scoring = new Scoring((type, data) =>
-      ctx.events.emit(type === 'score' ? 'game:score' : 'game:mult', data)
-    );
+    this.scoring = new Scoring((type, data) => ctx.events.emit(SCORING_EVENTS[type] ?? 'game:score', data));
+
+    // Settle beat (see _startSettleBeat / _updateSettleBeat). Preallocated: the
+    // whole sequence runs from update() and must not allocate per frame.
+    this._settleT = -1;
+    this._settleStep = 0;
+    this._ledgerPos = null; // resolved once, on the first wave clear
+    /** Reusable particle descriptor — fx.emitLit reads named fields off it. */
+    this._spawn = makeSpawn();
 
     // Base player max health, captured before any armour override.
     const p = ctx.peek('player');
@@ -211,6 +279,7 @@ export class GameSystem {
     this._lastJob = norm;
 
     this._endDeathBeat();
+    this._settleT = -1; // a run start cancels any settle still playing out
     this._continueUsed = false;
     this.wave = 0;
     this._waveActive = false;
@@ -354,6 +423,7 @@ export class GameSystem {
    */
   attract() {
     this._endDeathBeat();
+    this._settleT = -1;
     this._waveActive = false;
     this._breather = 0;
     this.wave = 0;
@@ -421,9 +491,132 @@ export class GameSystem {
     this._waveActive = false;
     const bonus = waveBonus(this.wave) * this.scoring.mult;
     this.scoring.addBonus(bonus);
+    // NOT resetCombo() here: the kill that cleared the wave may still have a
+    // `BATCH PROCESSED` parked on it. tickCombo runs through the breather, so
+    // the notice lands and then the window expires on its own.
     this.ctx.events.emit('game:waveClear', { wave: this.wave, bonus });
     this._breather = BREATHER_S; // update() counts this down and starts the next
+    this._startSettleBeat();
     console.info(`[game] wave ${this.wave} settled +${bonus} — breather ${BREATHER_S}s`);
+  }
+
+  /* ================================================================== */
+  /* the settle beat                                                    */
+  /* ================================================================== */
+
+  /**
+   * The four-second breather needs a physical moment at the front of it, or the
+   * wave clear is a banner and a number and nothing else. Three cues, all
+   * through other subsystems' PUBLIC APIs, all inside 1.2 s:
+   *
+   *   t=0.00  a gold flash at THE LEDGER (fx.lights.flash) — the plaza lights
+   *           up as the books balance. Priority 3 so a stray impact flash can
+   *           not evict it; short decay so it is a pulse, not a lamp.
+   *   t=0.00  player.addCameraShake(0.30) — the sanctioned trauma API. 0.30 is
+   *           roughly a distant explosion: felt, not thrown.
+   *   t=0.06  two small gold confetti bursts, 0.16 s apart, of CHIP/SPLINTER
+   *           tiles on a slow fall. Paper, not a jackpot.
+   *
+   * This is a SETTLE. Restraint is the spec: no screen flash, no full-screen
+   * particles, nothing that competes with the wave banner for the eye.
+   *
+   * `fx.now` is only refreshed inside fx.update(), and the registry runs fx
+   * before game every frame, so `now` is already this frame's elapsed time when
+   * we get here. (Calling from init or an event outside the frame would not be.)
+   */
+  _startSettleBeat() {
+    if (this.ctx.config?.deterministic) return; // never perturb a capture
+    const fx = this.ctx.peek('fx');
+    const p = this.ctx.peek('player');
+    const pos = this._ledgerWorldPos();
+
+    if (fx?.lights?.flash && pos) {
+      // (x,y,z, r,g,b, peak, duration, decay, distance, priority)
+      // peak 170 cd sits well under the 420 an explosion asks for — the plaza
+      // lifts, it does not detonate. distance 20 keeps the spill on the
+      // monument and the stone around it.
+      fx.lights.flash(pos.x, pos.y + 1.35, pos.z, GOLD.r, GOLD.g, GOLD.b, 170, 0.55, 4.6, 20, 3);
+    }
+    p?.addCameraShake?.(0.3);
+
+    this._settleT = 0;
+    this._settleStep = 0;
+  }
+
+  /** Runs the confetti bursts on the frame clock. Returns nothing, allocates nothing. */
+  _updateSettleBeat(dt) {
+    if (this._settleT < 0) return;
+    this._settleT += dt;
+    if (this._settleStep === 0 && this._settleT >= 0.06) {
+      this._settleStep = 1;
+      this._confetti(0.55);
+    } else if (this._settleStep === 1 && this._settleT >= 0.22) {
+      this._settleStep = 2;
+      this._confetti(0.4);
+    } else if (this._settleStep >= 2 && this._settleT >= 1.2) {
+      this._settleT = -1; // whole beat done well inside the 4s breather
+    }
+  }
+
+  /**
+   * One restrained gold burst above the Ledger. Count scales with `fx.pScale`
+   * (the quality preset's particle budget) exactly as fx's own emitters do, and
+   * the pool is a ring — emitting never allocates.
+   */
+  _confetti(strength) {
+    const fx = this.ctx.peek('fx');
+    const pos = this._ledgerWorldPos();
+    if (!fx?.emitLit || !pos) return;
+    const rng = this.ctx.rng; // deterministic stream, never Math.random
+    const s = this._spawn;
+    const n = Math.round(16 * (fx.pScale ?? 1) * strength) + 5;
+
+    for (let i = 0; i < n; i++) {
+      const a = rng.float() * 6.283;
+      const r = 0.2 + rng.float() * 0.55;
+      s.x = pos.x + Math.cos(a) * r;
+      s.y = pos.y + 1.1 + rng.float() * 0.4;
+      s.z = pos.z + Math.sin(a) * r;
+      s.vx = Math.cos(a) * (0.6 + rng.float() * 1.5);
+      s.vy = 1.8 + rng.float() * 2.1;
+      s.vz = Math.sin(a) * (0.6 + rng.float() * 1.5);
+      s.tile = i % 3 ? TILE_CHIP : TILE_SPLINTER;
+      s.size0 = 0.055 + rng.float() * 0.05;
+      s.size1 = s.size0 * 0.85; // flakes do not grow
+      s.sizeCurve = 1;
+      s.life = 1.2 + rng.float() * 0.8;
+      s.delay = 0;
+      s.drag = 2.1;      // enough air resistance to flutter rather than arc
+      s.gravity = -2.6;
+      s.rot = rng.float() * 6.283;
+      s.spin = (rng.float() - 0.5) * 7;
+      s.stretch = 0;
+      // Loot Gold ramping to a duller leaf as it falls out of the light. The
+      // lit layer is sun-shaded, so intensity carries the gold through the
+      // plaza's shadow side — without it the flakes read as grey litter.
+      s.r0 = 1.0; s.g0 = 0.74; s.b0 = 0.1; s.i0 = 2.4;
+      s.r1 = 0.5; s.g1 = 0.34; s.b1 = 0.06; s.i1 = 0.9;
+      s.alpha = 0.92;
+      s.alphaCurve = 1.5;
+      s.soft = 0.2;
+      s.turb = 0.22; s.turbFreq = 2.6;
+      s.seed = rng.float();
+      s.flags = 0;
+      fx.emitLit(s);
+    }
+  }
+
+  /** THE LEDGER in world space. Resolved once, from world's public transform. */
+  _ledgerWorldPos() {
+    if (this._ledgerPos) return this._ledgerPos;
+    const world = this.ctx.peek('world');
+    if (typeof world?.levelToWorld !== 'function') return null;
+    // One allocation, once per session — not a per-frame path.
+    const v = world.levelToWorld(LEDGER_LEVEL_X, 0, LEDGER_LEVEL_Z);
+    const gy = world.groundHeight?.(v.x, v.z);
+    if (Number.isFinite(gy)) v.y = gy;
+    this._ledgerPos = v;
+    return v;
   }
 
   /* ================================================================== */
@@ -438,6 +631,8 @@ export class GameSystem {
     }
 
     if (this._deathBeatUntil && ctx.time.raw >= this._deathBeatUntil) this._endDeathBeat();
+    this._updateSettleBeat(dt);
+    this.scoring.tickCombo(dt); // outside every state gate — see Scoring.tickCombo
 
     if (this._god) {
       const p = ctx.peek('player');

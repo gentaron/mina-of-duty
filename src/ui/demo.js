@@ -63,9 +63,9 @@ export class CombatDemo {
     // Killfeed seeded with three rows at different ages so the column shows the
     // full fade ramp instead of three identical rows.
     const seed = [
-      { attacker: 'YOU', victim: 'COBOL', headshot: false, age: 3.2, mine: true },
-      { attacker: 'YOU', victim: 'MAINFRAME', headshot: true, age: 1.9, mine: true },
-      { attacker: 'YOU', victim: 'T+2', headshot: false, age: 0.55, mine: true },
+      { attacker: 'YOU', victimVariant: 'ENFORCER', victim: 'COBOL', headshot: false, age: 3.2, mine: true },
+      { attacker: 'YOU', victimVariant: 'AUDITOR', victim: 'MAINFRAME', headshot: true, age: 1.9, mine: true },
+      { attacker: 'YOU', victimVariant: 'CONSULTANT', victim: 'T+2', headshot: false, age: 0.55, mine: true },
     ];
     for (const e of seed) {
       const it = ui.killfeed.push(e);
@@ -138,7 +138,13 @@ export class CombatDemo {
         ui.hurt(11, 0.62, -0.78);
         break;
       case 100:
-        ui.killfeed.push({ attacker: 'YOU', victim: 'PDF_STMT', headshot: true, mine: true });
+        ui.killfeed.push({
+          attacker: 'YOU',
+          victimVariant: 'AUDITOR',
+          victim: 'PDF_STMT',
+          headshot: true,
+          mine: true,
+        });
         s.score += 150;
         break;
       case 128:
