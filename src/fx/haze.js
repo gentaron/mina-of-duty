@@ -102,7 +102,8 @@ export class HazeSystem {
     mat.needsUpdate = true;
     mat.name = 'fx-distort';
     this.scene.add(this.layer.mesh);
-    this.layer.mesh.visible = true; // visibility is driven by instanceCount
+    // ParticleLayer is permanently visible and culls with its draw range; see
+    // the note in particles.js. `layer.active` is the liveness signal.
 
     this.rt = null;
     this.size = new THREE.Vector2(1, 1);
@@ -213,8 +214,7 @@ export class HazeSystem {
     this.layer.uniforms.uDepth.value = depthTexture;
     this.layer.uniforms.uSoftEnable.value.x = depthTexture ? 1 : 0;
     this.layer.flush(now);
-    const live = this.layer.mesh.visible;
-    this.layer.mesh.visible = true; // culling is by instanceCount, not visibility
+    const live = this.layer.active;
     this._camera = camera;
     this.pass.enabled = this.enabled && live && !!this.rt;
   }

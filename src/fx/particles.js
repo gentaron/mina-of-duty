@@ -284,6 +284,9 @@ export class ParticleLayer {
     bind('aMisc', O_MS);
     bind('aExtra', O_EX);
     geo.instanceCount = 0;
+    // Zero-vertex draw range is how this layer hides. See the `mesh.visible`
+    // note below.
+    geo.setDrawRange(0, 0);
     // Particles are world-space in the shader; the mesh transform is identity
     // and culling must never remove it.
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e7);
@@ -333,7 +336,16 @@ export class ParticleLayer {
     this.mesh.frustumCulled = false;
     this.mesh.matrixAutoUpdate = false;
     this.mesh.renderOrder = o.renderOrder ?? (additive ? 12 : 10);
-    this.mesh.visible = false;
+    // PERMANENTLY VISIBLE — culling is `drawRange`/`instanceCount`, never
+    // `visible`. MEASURED: a layer that hides until it has particles is skipped
+    // by the renderer's `traverseVisible` walk and by every render list, so the
+    // program its material needs is not compiled until the frame that first
+    // draws a spark — and three bakes the *current light counts* into the
+    // program cache key, so the FX pre-warm's key (taken before the frame loop
+    // settled its light cull) is not the key that frame asks for. Drawing zero
+    // instances every frame instead costs one no-op draw call and guarantees
+    // the compiled program is the one gameplay uses.
+    this.mesh.visible = true;
     this.mesh.name = `fx-particles-${o.mode}`;
     // FX are not level content: keep the render probe's "is the world empty?"
     // heuristic from counting our sprites as geometry.
@@ -343,11 +355,12 @@ export class ParticleLayer {
     this._dirtyLo = Infinity;
     this._dirtyHi = -Infinity;
     this._wrapped = false;
+    this._live = false;
   }
 
   /** True while anything might still be alive. */
   get active() {
-    return this.mesh.visible;
+    return this._live;
   }
 
   /**
@@ -428,7 +441,10 @@ export class ParticleLayer {
     }
     this.uniforms.uTime.value = now;
     this.geometry.instanceCount = this._wrapped ? this.capacity : this.highWater;
-    this.mesh.visible = now < this.expireAt && this.geometry.instanceCount > 0;
+    // Same predicate the old `mesh.visible` used, expressed as a draw range so
+    // the mesh never leaves the scene walk. See the constructor.
+    this._live = now < this.expireAt && this.geometry.instanceCount > 0;
+    this.geometry.setDrawRange(0, this._live ? Infinity : 0);
   }
 
   dispose() {

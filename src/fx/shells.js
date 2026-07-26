@@ -71,6 +71,12 @@ export class ShellSystem {
     this.mesh.castShadow = false;
     this.mesh.receiveShadow = false;
     this.mesh.count = 0;
+    // PERMANENTLY VISIBLE — culling is `drawRange`, never `visible`. MEASURED:
+    // brass hid itself until the first casing was ejected, so `fx-brass` was
+    // outside the renderer's `traverseVisible` walk and its program was neither
+    // patched nor compiled until the frame of the first shot. A zero-length
+    // draw range keeps it in the walk for one no-op draw call a frame.
+    geo.setDrawRange(0, 0);
     this.mesh.name = 'fx-shells';
     this.mesh.userData.owProbe = true;
     this.mesh.userData.owNoShadow = true;
@@ -217,7 +223,7 @@ export class ShellSystem {
       count = i + 1;
     }
     if (count === 0 && this._lastCount === 0) {
-      this.mesh.visible = false;
+      this.geometry.setDrawRange(0, 0);
       return;
     }
     this._lastCount = count;
@@ -231,7 +237,7 @@ export class ShellSystem {
     }
     this.mesh.count = count;
     this.mesh.instanceMatrix.needsUpdate = true;
-    this.mesh.visible = count > 0;
+    this.geometry.setDrawRange(0, count > 0 ? Infinity : 0);
   }
 
   dispose() {

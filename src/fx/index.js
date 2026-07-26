@@ -304,6 +304,14 @@ export class FxSystem {
       scratch.children.length = 0;
       for (const m of meshes) if (m) scratch.children.push(m);
       if (!scratch.children.length) return;
+      // PATCH BEFORE COMPILE. MEASURED: the render system rewrites every lit
+      // material's `customProgramCacheKey` when it patches it (sun shadows, AO,
+      // SSR), and it only reaches a material through its own per-frame scene
+      // walk. Compiling first therefore builds `fx-decal-1` while the first
+      // real draw asks for `ow-patch-<n>fx-decal-1`, and the warm is thrown
+      // away. Patching here is pure reordering — it runs exactly the patch the
+      // frame loop would run a moment later, on the same materials.
+      for (const m of scratch.children) this.render?.patchMaterials?.(m);
       try {
         renderer.compile(scratch, camera, targetScene);
       } catch (err) {

@@ -516,7 +516,7 @@ function frame() {
     console.info(
       `f${time.frame} add=${fx.add.spawned} lit=${fx.lit.spawned} mote=${fx.motes.spawned} ` +
         `haze=${fx.hazeSys.layer.spawned} decals=${fx.stats.decals} impacts=${fx.stats.spawned} ` +
-        `addVis=${fx.add.mesh.visible} litVis=${fx.lit.mesh.visible} inst=${fx.add.geometry.instanceCount}`
+        `addLive=${fx.add.active} litLive=${fx.lit.active} inst=${fx.add.geometry.instanceCount}`
     );
   }
   const av = ATLAS_VIEWS[params.get('kind')];

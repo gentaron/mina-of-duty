@@ -44,6 +44,8 @@ export class DecalSystem {
     this.highWater = 0;
     this.expireAt = -1;
     this.count = 0;
+    /** True while the ring still has an unfaded decal in it (drives drawRange). */
+    this.live = false;
 
     this.pos = new Float32Array(this.maxVerts * 3);
     this.nrm = new Float32Array(this.maxVerts * 3);
@@ -123,7 +125,19 @@ export class DecalSystem {
     this.mesh.castShadow = false;
     this.mesh.userData.owProbe = true;
     this.mesh.userData.owNoShadow = true;
-    this.mesh.visible = false;
+    // PERMANENTLY VISIBLE — culling is `drawRange`, never `visible`. MEASURED:
+    // the render system's per-frame walk is `scene.traverseVisible`, and that
+    // walk is the only route to `MaterialPatcher.patch()`. A mesh that hides
+    // until it has content is therefore never patched, so the FX pre-warm
+    // compiles the *unpatched* key (`fx-decal-1`) while the frame that draws
+    // the first bullet hole asks for the patched one
+    // (`ow-patch-<n>fx-decal-1`) — and pays a fresh compile mid-gameplay.
+    // Staying visible with `setDrawRange(0, 0)` costs one no-op draw call
+    // against an ~1100-call frame and writes no pixels, and means the program
+    // this mesh needs is compiled by the very first frame, with the frame
+    // loop's own light counts baked into its cache key.
+    this.mesh.visible = true;
+    // `g.setDrawRange(0, 0)` above is what keeps it off screen until flush().
 
     // scratch (allocated once)
     this._polyA = new Float32Array(MAX_POLY * 3);
@@ -409,8 +423,12 @@ export class DecalSystem {
       this._dirtyHi = -Infinity;
     }
     const verts = (this._wrapped ? this.capacity : this.highWater) * this.vertsPerDecal;
-    this.geometry.setDrawRange(0, verts);
-    this.mesh.visible = verts > 0 && now < this.expireAt;
+    // Same predicate as the old `mesh.visible`, expressed as a draw range: once
+    // every decal in the ring has faded out we ask for zero vertices instead of
+    // hiding the mesh, so the material stays in the render walk (and therefore
+    // stays patched and compiled) with no pixels written. See the constructor.
+    this.live = verts > 0 && now < this.expireAt;
+    this.geometry.setDrawRange(0, this.live ? verts : 0);
   }
 
   dispose() {
