@@ -22,7 +22,7 @@ import { csmShaderChunk } from './csm.js';
  * patched material means a single write per frame updates all of them.
  */
 
-const PATCH_VERSION = 9;
+const PATCH_VERSION = 10;
 
 /** Max coarse interior volumes the indirect gate can hold (see OW_ROOMS). */
 export const MAX_ROOMS = 10;
@@ -65,6 +65,9 @@ export class MaterialPatcher {
       // Coarse interior volumes in level space: (cx, cz, hx, hz) / (y0, y1,,).
       owRooms: { value: makeVec4Array(MAX_ROOMS) },
       owRoomsY: { value: makeVec4Array(MAX_ROOMS) },
+      // Grazing-angle rim from the street's own sign wall. xyz = radiance,
+      // w = falloff exponent. Zero in daylight. See the injection below.
+      owRim: { value: new THREE.Vector4(0, 0, 0, 3) },
     };
 
     this.chunk = csmShaderChunk(opts.cascades, opts.quality);
@@ -190,6 +193,47 @@ export class MaterialPatcher {
           // metered the same as the sunlit exterior framed in its own doorway.
           irradiance += owGroundFill *
             ( owSunBounce( owWN ) * owFillGain.y * owFillAo * owIndoor );
+
+          // --- grazing rim, from the street's own sign wall ------------------
+          // After dark this street is lit by a ring of emissive signage at eye
+          // height, and light from a ring reaches a silhouette's edge at grazing
+          // incidence long after it has stopped reaching the face pointed at
+          // you. That is the third leg of key/fill/RIM the render contract asks
+          // for, and it is the only one this engine did not have outdoors — the
+          // viewmodel had a rim rig, the world had none, so at dusk every
+          // enemy, crate and doorframe terminated on an unlit edge.
+          //
+          // It goes into indirectSpecular rather than into the diffuse
+          // irradiance on purpose: there it would be multiplied by albedo,
+          // and the two things that most need an edge — the charcoal LEGACY CORE
+          // silhouette and dark asphalt props — are exactly the albedos that
+          // would swallow it. Occluded by AO and by the interior gate, so it
+          // cannot light the inside of a closed room or the bottom of a crevice,
+          // and driven to exactly zero above 7 degrees of solar elevation, so no
+          // daylight-pinned frame moves by a code value.
+          //
+          // GATED TO NEAR-VERTICAL SURFACES, which is the difference between a
+          // rim and a cyan bath. A silhouette edge is a surface whose normal has
+          // turned perpendicular to the view — and on a FLOOR seen from standing
+          // height that condition is true across the entire visible plane, so an
+          // ungated Fresnel term painted the whole street, the sandbags and the
+          // viewmodel a flat cyan (measured: it cost 0.7 stops of autoexposure).
+          // A wall, a crate face, a doorframe and a standing figure all carry
+          // near-horizontal normals; ground planes and soffits do not. Gating on
+          // that costs one smoothstep and removes the entire failure mode.
+          // The gate is evaluated BEFORE the pow and guards it. Measured
+          // interleaved at 1600x900 the whole term costs ~1.6 ms of a ~41 ms
+          // headless frame; the pow is the bulk of that, and in a street canyon
+          // the ground, the roofs and every soffit fail the gate. The branch is
+          // spatially coherent — whole floors and whole walls, not a checker —
+          // so it is close to free where it is taken and a real saving where it
+          // is not.
+          float owRimG = smoothstep( 0.85, 0.35, abs( owUp ) );
+          if ( owRimG > 0.002 && owRim.x + owRim.y + owRim.z > 0.0 ) {
+            float owFres = 1.0 - clamp( dot( geometryNormal, geometryViewDir ), 0.0, 1.0 );
+            reflectedLight.indirectSpecular +=
+              owRim.rgb * ( pow( owFres, owRim.w ) * owRimG * owFillAo * owIndoor );
+          }
         }
         #endif
         #if defined( STANDARD ) && defined( RE_IndirectSpecular ) && defined( USE_ENVMAP )
@@ -243,6 +287,7 @@ uniform vec4 owIndirect;
 uniform vec4 owRoomXf;
 uniform vec4 owRooms[ OW_ROOMS ];
 uniform vec4 owRoomsY[ OW_ROOMS ];
+uniform vec4 owRim;
 
 /**
  * 1 outdoors, -> owIndirect.y deep inside a coarse interior volume.

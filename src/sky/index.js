@@ -51,8 +51,62 @@ const SUN_KEY_GAIN = 1.55;
  */
 const SKY_AMBIENT_FRACTION = 0.15;
 
-/** Cool night hue for the published ambient — moonlight after the Purkinje shift. */
-const NIGHT_AMBIENT_HUE = [0.35, 0.5, 1.0];
+/**
+ * Cool night hue for the published ambient — moonlight after the Purkinje shift,
+ * pulled off pure blue toward violet. A city's night ambient is not the moon
+ * alone: it is the moon plus the whole sky the city is lighting, and here that
+ * sky is magenta (see CITY_GLOW). Green comes down rather than red going up, so
+ * the level is unchanged and only the hue moves.
+ */
+const NIGHT_AMBIENT_HUE = [0.42, 0.40, 1.0];
+
+/**
+ * The ambient's warm target once the solar disc is under the horizon.
+ *
+ * The `warm` term in _updateCelestial lerps toward the SUN LIGHT's own colour,
+ * and below the horizon that colour is the transmittance at negative elevation:
+ * (1.00, 0.27, 0.02) — pure sodium orange. Civil twilight is not orange. The
+ * anti-solar sky at -4 degrees is the Belt of Venus, which is magenta over
+ * violet, and over a neon street it is more so. Crossfading the warm TARGET to
+ * this as the disc sets is both closer to the physics and the single biggest
+ * reason the shipping dusk grade now reads as cyber-dusk rather than desert-dusk.
+ */
+const TWILIGHT_HUE = [1.0, 0.42, 0.72];
+
+/**
+ * Urban skyglow, in scene radiance at the horizon. See `skCityGlow` in luts.js
+ * for what it is and why it lives inside the sky-view LUT.
+ *
+ * Levels are set against the sky the LUT actually produces at the shipping hour
+ * (20.2): the twilight remnant on the western horizon measures ~0.05-0.07 scene
+ * radiance there. `scaleDeg` is the e-folding height in degrees of elevation.
+ *
+ * The first pass at these ran 0.030/3.2 and 0.013/13, which was invisible: this
+ * street is a canyon, so almost none of the 0-5 degree band is on screen, and by
+ * the time the sky clears the rooftops (10-15 degrees) a 3.2-degree e-folding has
+ * decayed to nothing. The band therefore has to be authored for the elevation the
+ * PLAYER can actually see sky at, not for where a photometer would put it.
+ */
+const CITY_GLOW = {
+  // Boss Magenta #FF2D78 pulled off the pure primary: a saturated primary reads
+  // as a gel over the lens, a broadened one reads as light in the air.
+  lowHue: [1.0, 0.30, 0.60],
+  lowLevel: 0.050,
+  lowScaleDeg: 4.5,
+  // The wide violet lift that carries the band up off the rooftops instead of
+  // stopping at a hard stripe.
+  //
+  // 0.022 at 18 degrees, NOT 0.030 at 26. A 26-degree e-folding still has 40% of
+  // its horizon value at the zenith, and 0.030 of violet against a 0.017 night
+  // zenith is not a glow band, it is a repaint: the whole dome came back lilac
+  // and the frame stopped being blue hour at all. The band has to die inside the
+  // bottom third of the sky or it is not skyglow, it is a gel. 18 degrees puts
+  // it under a fiftieth of its horizon value at the zenith while still reaching
+  // the strip of sky a street canyon actually shows.
+  highHue: [0.62, 0.34, 1.0],
+  highLevel: 0.022,
+  highScaleDeg: 18.0,
+};
 
 /**
  * OVERWATCH sky, atmosphere and global lighting.
@@ -216,16 +270,28 @@ export class SkySystem {
        * over every pixel of the frame.
        */
       shaftGain: 2.6,
-      /** Kept well under the key gain: the shafts are all contrast, and a
-       *  strong ambient term is exactly what washes that contrast out. */
-      ambientGain: 0.22,
+      /**
+       * Kept well under the key gain: the shafts are all contrast, and a strong
+       * ambient term is exactly what washes that contrast out. Up from 0.22 —
+       * the haze's ambient is now sampled off a sky that carries the city's
+       * magenta skyglow, so this is the knob that decides whether the signage
+       * light visibly *travels* down the street or stops at the sign. A sixth of
+       * a stop is enough to see it and not enough to milk the 200 m view.
+       */
+      ambientGain: 0.26,
       noise: 0.55,
       noiseScale: 0.045,
       phaseForward: 0.76,
       phaseBackward: -0.36,
       phaseBackWeight: 0.34,
-      /** Blue-biased so distant geometry loses red first, as Rayleigh does. */
-      extinctionTint: new THREE.Vector3(0.94, 1.02, 1.24),
+      /**
+       * Blue-biased so distant geometry loses red first, as Rayleigh does —
+       * now with green pulled under red as well, so the axis distance travels
+       * along is blue-VIOLET rather than blue-cyan. Rayleigh alone would put
+       * green between the two; a city's aerosol column, lit by its own magenta
+       * skyglow, does not. Costs nothing: it is the same three multiplies.
+       */
+      extinctionTint: new THREE.Vector3(1.0, 0.94, 1.30),
     };
 
     // ---- shared uniform objects -------------------------------------------
@@ -256,6 +322,11 @@ export class SkySystem {
       // only warm fill a shaded alley gets once the sun is off it.
       uGroundAlbedo: { value: new THREE.Vector3(0.33, 0.29, 0.225) },
       uHorizonMurk: { value: this.weather.horizonMurk },
+      // Urban skyglow bands, baked into the sky-view LUT. rgb = scene radiance
+      // at the horizon (already gated by elevation on the CPU), w = 1/e-folding
+      // in radians of elevation. See CITY_GLOW and skCityGlow in luts.js.
+      uCityGlowA: { value: new THREE.Vector4(0, 0, 0, 1) },
+      uCityGlowB: { value: new THREE.Vector4(0, 0, 0, 1) },
       // Sky highlight roll-off: knee in scene radiance, overshoot room above it.
       // Driven off the beam luminance every time the sun moves — see skRolloff.
       uSkyRolloff: { value: new THREE.Vector2(0.30, 1.5) },
@@ -347,6 +418,13 @@ export class SkySystem {
     this.ambientColor = new THREE.Color(0, 0, 0);
     /** Indirect-light budget for this sun elevation, 0..1. See _updateCelestial. */
     this.indirectScale = 1;
+    /**
+     * 0..1 — how much of the frame's light is the CITY rather than the sun.
+     * 1 once the disc is under the horizon, 0 by the time it is 7 degrees up.
+     * Published so `render` can pay for the street's neon bounce off the same
+     * curve the skyglow rides, instead of both being separately hand-timed.
+     */
+    this.neonAmount = 0;
     /** EV of exposure compensation for this sun elevation; + is darker. */
     this.exposureBias = 0;
     this._beamGain = 1;
@@ -696,20 +774,48 @@ export class SkySystem {
     const warm = (1 - THREE.MathUtils.smoothstep(altDeg, 1, 22)) * beamAlive;
     const night = 1 - beamAlive;
     const nh = NIGHT_AMBIENT_HUE;
-    const ar = THREE.MathUtils.lerp(
-      THREE.MathUtils.lerp(0.36, nh[0], night),
-      this.sunLight.color.r,
-      warm
+
+    // ---- city vs sun -------------------------------------------------------
+    // One curve for everything that belongs to the CITY rather than to the sun:
+    // the skyglow bands below, the twilight target for the ambient's warm end,
+    // and (published as `neonAmount`) the street's neon bounce in `render`.
+    // 1 the moment the disc touches the horizon, 0 by 7 degrees of elevation —
+    // so the 16.5 interior/detail/weapon/combat set and the 19.2 sunset anchor
+    // are untouched and only the shipping dusk and the night frame move.
+    const cityAmount = 1 - THREE.MathUtils.smoothstep(altDeg, -1.0, 7.0);
+    this.neonAmount = cityAmount;
+
+    // The warm end of the ambient crossfades from the sun's live hue to
+    // TWILIGHT_HUE as the disc sets — see that constant for why.
+    const sc = this.sunLight.color;
+    const wr = THREE.MathUtils.lerp(sc.r, TWILIGHT_HUE[0], cityAmount);
+    const wg = THREE.MathUtils.lerp(sc.g, TWILIGHT_HUE[1], cityAmount);
+    const wb = THREE.MathUtils.lerp(sc.b, TWILIGHT_HUE[2], cityAmount);
+
+    const ar = THREE.MathUtils.lerp(THREE.MathUtils.lerp(0.36, nh[0], night), wr, warm);
+    const ag = THREE.MathUtils.lerp(THREE.MathUtils.lerp(0.56, nh[1], night), wg, warm);
+    const ab = THREE.MathUtils.lerp(THREE.MathUtils.lerp(1.0, nh[2], night), wb, warm);
+
+    // ---- skyglow bands into the sky-view LUT -------------------------------
+    // Written before _bakeSky (setTimeOfDay calls this first), so the bake picks
+    // them up in the same pass that recomputes the atmosphere. Preallocated
+    // Vector4s, no per-frame allocation, and nothing here runs unless the sun
+    // actually moved.
+    const gA = this.shared.uCityGlowA.value;
+    const gB = this.shared.uCityGlowB.value;
+    const lvlA = CITY_GLOW.lowLevel * cityAmount;
+    const lvlB = CITY_GLOW.highLevel * cityAmount;
+    gA.set(
+      CITY_GLOW.lowHue[0] * lvlA,
+      CITY_GLOW.lowHue[1] * lvlA,
+      CITY_GLOW.lowHue[2] * lvlA,
+      1 / THREE.MathUtils.degToRad(CITY_GLOW.lowScaleDeg)
     );
-    const ag = THREE.MathUtils.lerp(
-      THREE.MathUtils.lerp(0.56, nh[1], night),
-      this.sunLight.color.g,
-      warm
-    );
-    const ab = THREE.MathUtils.lerp(
-      THREE.MathUtils.lerp(1.0, nh[2], night),
-      this.sunLight.color.b,
-      warm
+    gB.set(
+      CITY_GLOW.highHue[0] * lvlB,
+      CITY_GLOW.highHue[1] * lvlB,
+      CITY_GLOW.highHue[2] * lvlB,
+      1 / THREE.MathUtils.degToRad(CITY_GLOW.highScaleDeg)
     );
     // The moon term is deliberately generous against the day term (0.55 vs 0.15
     // of the key): a moonlit sky is a much larger fraction of its own key than a

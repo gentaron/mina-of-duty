@@ -174,6 +174,40 @@ uniform vec3 uMoonIrradiance;
 uniform float uSunAltitude;   // radians above the horizon
 uniform float uMoonRelAz;     // moon azimuth relative to the sun, radians
 uniform float uMoonAltitude;
+uniform vec4 uCityGlowA;      // rgb radiance AT the horizon, w = 1 / e-folding (rad)
+uniform vec4 uCityGlowB;
+
+/**
+ * Urban skyglow — the light a lit city throws back onto its own twilight.
+ *
+ * This is a real, measurable term (astronomers spend their lives complaining
+ * about it) and it is the one place a physical atmosphere leaves room for the
+ * brand: the hue of a city's skyglow is the hue of its signage. NERD OF DUTY's
+ * street is neon, so the band is magenta at the rooftops fading through violet
+ * into the blue hour, rather than the sodium amber a 1990s city would give.
+ *
+ * It goes into the SKY-VIEW LUT rather than into the dome shader, which is what
+ * makes it cost nothing and stay coherent: the LUT is re-baked only when the sun
+ * moves, and *everything* downstream reads it — the visible sky, the 2x1 ambient
+ * probe (so the volumetric haze carries the glow through skFogAmbient), the
+ * horizon murk band, the first-bounce ground term, and the equirect PMREM bake, so the
+ * IBL lights the street with it too. One insertion point, no new pass, no
+ * per-frame work.
+ *
+ * Two exponentials, not one: a tight hot band along the roofline plus a wide
+ * violet lift, because a single e-folding is either a hard stripe or a wash.
+ * Both are gated to zero above the horizon-crossing by the CPU (see
+ * SkySystem._updateCelestial), so every daylight-pinned shot is untouched.
+ */
+vec3 skCityGlow( float altitude ) {
+  float a = max( altitude, 0.0 );
+  // Fade it out below the horizon over ~2 degrees. The dome mixes toward the
+  // ground albedo down there; a glow that survived the crossing would light the
+  // street from underneath and read as a bug, not as a city.
+  float above = 1.0 - smoothstep( 0.0, 0.035, max( -altitude, 0.0 ) );
+  return ( uCityGlowA.rgb * exp( -a * uCityGlowA.w ) +
+           uCityGlowB.rgb * exp( -a * uCityGlowB.w ) ) * above;
+}
 
 void main() {
   float azimuth = ( vUv.x - 0.5 ) * 2.0 * SK_PI;
@@ -195,6 +229,7 @@ void main() {
 
   vec3 lum = skRaymarchSky( uViewPos, rayDir, sunDir, uSunIrradiance,
                             moonDir, uMoonIrradiance, 40.0 );
+  lum += skCityGlow( altitude );
   fragColor = vec4( lum, 1.0 );
 }
 `;
@@ -275,6 +310,8 @@ export class SkyLuts {
       uSunAltitude: shared.uSunAltitude,
       uMoonAltitude: shared.uMoonAltitude,
       uMoonRelAz: shared.uMoonRelAz,
+      uCityGlowA: shared.uCityGlowA,
+      uCityGlowB: shared.uCityGlowB,
     });
     this.ambientPass = new SkyPass('sky-ambient', AMBIENT_FRAG, {
       uViewPos: shared.uViewPos,
