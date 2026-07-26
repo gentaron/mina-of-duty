@@ -66,6 +66,7 @@ export class Squad {
           m.lastKnownAge = 0.9 + this.rng.float() * 0.8;
           m.alertness = 1;
           if (m.state === 'idle' || m.state === 'patrol') m._setState('alert');
+          m.bark('copy');
         }
       }
     }
@@ -102,6 +103,7 @@ export class Squad {
 
   claimFlank(agent) {
     this.flanker = agent;
+    agent.bark('flank');
   }
 
   requestGrenade() {

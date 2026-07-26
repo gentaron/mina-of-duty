@@ -99,6 +99,9 @@ export class Agent {
     const def = ai.variant(this.variantName);
     this.def = def;
     this.scale = def.variant.scale ?? 1;
+    /** Themed faction name for UI (killfeed etc), e.g. "AUDITOR". See
+     *  VARIANTS[name].display in soldier.js — runtime id stays `variantName`. */
+    this.variantDisplay = def.variant.display ?? this.variantName.toUpperCase();
 
     /* ---------------- body ---------------- */
     const { bones, skeleton, root } = RIG.createSkeleton();
@@ -223,6 +226,12 @@ export class Agent {
     this.peekTimer = this.rng.range(0.5, 2.5);
     this.grenadeCooldown = this.rng.range(9, 22);
     this.hasGrenade = true;
+
+    /* ---------------- vocal (ai:bark) ---------------- */
+    /** Shared per-agent cooldown across every bark kind — see bark(). Keeps one
+     *  soldier from stacking callouts; cross-agent mush is the audio mixer's
+     *  own 0.42s global throttle. */
+    this._lastBark = -Infinity;
 
     /* ---------------- navigation ---------------- */
     this.path = [];
@@ -385,6 +394,21 @@ export class Agent {
     this.alertness = 1;
   }
 
+  /**
+   * Emit an `ai:bark` callout for `audio` to voice (see BARKS in
+   * src/audio/vox.js: spot, reload, grenade, flank, suppress, advance, hurt,
+   * death, copy). Gated by a shared per-agent cooldown, deterministic
+   * (ctx.time.elapsed, no RNG) — audio's own bark() has a separate 0.42s
+   * global throttle across all agents, so this only needs to stop one soldier
+   * from stacking callouts on itself.
+   */
+  bark(kind, cooldown = 4) {
+    const now = this.ctx.time.elapsed;
+    if (now - this._lastBark < cooldown) return;
+    this._lastBark = now;
+    this.ctx.events.emit('ai:bark', { kind, agent: this, position: this.position, voice: this.id });
+  }
+
   /* ================================================================== */
   /* behaviour                                                          */
   /* ================================================================== */
@@ -484,6 +508,11 @@ export class Agent {
     this._setState(STATE.COMBAT);
     this.cover = null;
     this.repathTimer = 0;
+    // Fresh acquisition only: the cooldown in bark() absorbs the case where
+    // this fires again a moment later from a COMBAT -> ALERT -> COMBAT flicker
+    // (target briefly lost then reacquired), so it never repeats within a few
+    // seconds of the first shout.
+    this.bark('spot');
   }
 
   _combat(dt) {
@@ -573,6 +602,7 @@ export class Agent {
       // suppressing fire at the last known spot even without a clean shot
       if (!this.wantFire && this.hasTarget && this.lastKnownAge < 2.2 && this.peeking) {
         this.wantFire = this.rng.float() < 0.35;
+        if (this.wantFire) this.bark('suppress');
       }
     }
 
@@ -861,6 +891,7 @@ export class Agent {
       this.die(point, dir, amount);
       return;
     }
+    this.bark('hurt');
     // hit reaction by region, with the side the round came from
     const side = dir ? Math.sign(dir.x * Math.cos(this.yaw) - dir.z * Math.sin(this.yaw)) || 1 : 1;
     const region =

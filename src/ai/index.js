@@ -822,6 +822,7 @@ export class AiSystem {
 
   emitReload(agent) {
     this.ctx.events.emit('weapon:reload', { weapon: 'ai_rifle', phase: 'start', actor: agent });
+    agent.bark('reload');
   }
 
   /** Grenade geometry + material. Built at prewarm, not on the first throw. */
@@ -838,6 +839,7 @@ export class AiSystem {
   throwGrenade(agent, from, target) {
     const phys = this.phys;
     if (!phys) return;
+    agent.bark('grenade');
     this._ensureGrenade();
     const mesh = new THREE.Mesh(this._grenadeGeo, this._grenadeMat);
     this.root.add(mesh);

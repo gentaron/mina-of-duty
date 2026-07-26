@@ -93,6 +93,7 @@ Emit and listen via `ctx.events`. Payloads are plain objects. The canonical set:
 | `ai:bark` | `{ kind, agent, position, voice }` — `position` (agent's world position) drives spatialisation, `voice` seeds per-agent formant variation; kinds per `src/audio/vox.js` BARKS; consumed by audio | ai |
 | `boot:progress` | `{ phase, pct, detail?, ms? }` — pct 0..1 monotonic across boot | engine |
 | `boot:done` | `{ totalMs }` | engine |
+| `ui:attract` | `{}` — return to attract state (cabinet idle reset) | ui |
 
 If you need an event that is not listed, add a row here in the same commit.
 

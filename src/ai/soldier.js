@@ -108,6 +108,7 @@ const GEAR = {
 export const VARIANTS = {
   // ENFORCER — charcoal / gunmetal corporate armour, Boss Magenta trim.
   vanguard: {
+    display: 'ENFORCER',
     camo: 'arid',
     clothTint: [0.95, 0.97, 1.01], // charcoal graphite (cool, pulled down off "blue-grey")
     gearTint: [0.83, 0.85, 0.91], // gunmetal webbing
@@ -134,6 +135,7 @@ export const VARIANTS = {
   // (tan/taupe) and read as a second faction dissolving into the sand street;
   // now cooled and darkened into the corporate charcoal band. Skin untouched.
   irregular: {
+    display: 'CONSULTANT',
     camo: 'woodland',
     clothTint: [0.92, 0.94, 0.98], // cool dark-greige (was warm greige)
     gearTint: [0.80, 0.83, 0.88], // gunmetal rig (was taupe)
@@ -157,6 +159,7 @@ export const VARIANTS = {
   },
   // AUDITOR — near-black heavy armour, magenta visor. Keeps the bulkier scale.
   breacher: {
+    display: 'AUDITOR',
     camo: 'urban',
     clothTint: [0.95, 0.96, 0.99], // neutral near-black
     gearTint: [0.68, 0.70, 0.75], // near-black rig
