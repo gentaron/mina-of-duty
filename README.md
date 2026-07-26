@@ -1,125 +1,79 @@
-# Claude of Duty
+# NERD OF DUTY
 
-Get updates [here](https://shumer.dev/newsletter).
+**A FINTECH NERDCON GAME**
 
-A first-person shooter built in the browser with Three.js r180 and WebGL2. Roughly
-55k lines across 11 subsystems, written by a fleet of AI agents under orchestration.
+![Nerd of Duty — dusk over the plaza](docs/hero.png)
 
-**There are no art assets.** Every texture, mesh, animation and sound is generated
-procedurally at load time from code. No models, no HDRIs, no image files, no audio
-files. The only runtime dependency is `three`.
+A browser FPS about defending fintech from the enemy it still hasn't beaten: the legacy core.
+
+**Play it now: [nerd-of-duty.vercel.app](https://nerd-of-duty.vercel.app)** on desktop with a mouse. One click to deploy.
+
+## HOLD THE LEDGER
+
+The gold Ledger stands in the plaza. LEGACY CORE SECURITY, the private security force of Legacy Core Banking (est. 1959), wants it back. Waves escalate until you fall.
+
+- Kills score `CARD DECLINED +100`, headshots `SAR FILED +150`, all through a chain multiplier that climbs to ×9 and only fully resets when you die.
+- Clear a wave, bank the settle bonus, catch your breath for four seconds.
+- Death means `INSUFFICIENT FUNDS`. You get one `FILE A DISPUTE — CONTINUE` per run. After that, the run is settled.
+- Your best score and best wave persist locally. The game remembers what you did last quarter.
+
+![Title screen](docs/title.png)
+
+## Jobs
+
+| Job | Loadout | Trade-off |
+|---|---|---|
+| **FRAUD ANALYST** | RULES ENGINE MK4 (rifle) | The all-rounder. Pattern recognition at 800 RPM. |
+| **PAYMENTS ENGINEER** | VELOCITY-9 (SMG) | Fast, loud, occasionally sprays outside the spec. |
+| **COMPLIANCE OFFICER** | SIDECAR (pistol) + max armour | One calibre, zero exceptions, hardest to kill. |
+
+## Controls
+
+| Input | Action |
+|---|---|
+| `W A S D` / arrows | Move |
+| Mouse | Look · LMB fire · RMB aim |
+| `Shift` | Sprint |
+| `Space` | Jump |
+| `Ctrl` / `C` | Crouch |
+| `Q` / `E` | Lean |
+| `R` | Reload |
+| `F` | Use |
+| `G` | Grenade |
+| `1` `2` `Tab` | Swap weapon |
+| `Esc` | Release cursor |
+
+## Under the hood
+
+Nerd of Duty is a fork of [mshumer/Claude-of-Duty](https://github.com/mshumer/Claude-of-Duty) (MIT), a ~55k-line three.js FPS in which every asset is procedural. Geometry, textures, audio and animation are all generated at load time. There are no art files in this repo, and the only runtime dependency is `three`.
+
+The NerdCon conversion kept the engine and added:
+
+- `src/game/`: the HOLD THE LEDGER wave loop, scoring, and continue flow
+- Arcade Terminal UI: the [Fintech NerdCon](https://fintechnerdcon.com) brand system as a HUD
+- LEGACY CORE SECURITY: retextured enemy faction with killfeed callsigns (`COBOL`, `BATCH`, `FAX`, `T+2`…)
+- Fintech world dressing: MT-103 CAFÉ, KYC BODEGA, STABLECOIN LIQUORS, and the Ledger monument
+- A dusk blue-hour grade, because compliance deadlines land at end of day
+
+The conversion itself was agent-built: contract-first fleets with single-owner subsystems, adversarial verifier passes, and a deterministic screenshot harness (`tools/capture.mjs`) gating every change. `ARCHITECTURE.md` and `NERDCON_CONTRACT.md` are the law the agents worked under.
+
+## Development
 
 ```bash
 npm install
-npm run dev          # http://127.0.0.1:5173
+npm run dev      # vite dev server on :5173
+npm run build    # production build → dist/
+npm run shot     # deterministic captures (tools/capture.mjs --list for shots)
 ```
 
-Click the canvas to lock the cursor. WASD move, mouse aim, LMB fire, RMB ADS,
-R reload, Shift sprint, Ctrl crouch, Space jump, Q/E lean, Esc release.
+Debug API in the console: `window.NOD` (`state`, `start(job)`, `skipToWave(n)`, `god(true)`, `killAll()`).
 
-## What's in it
+## Fintech NerdCon
 
-| subsystem | what it does |
-|---|---|
-| `render` | HDR pipeline, cascaded shadow maps in a `sampler2DArray` with texel snapping and PCSS contact hardening, MRT depth/normal/velocity prepass, GTAO, TAA with YCoCg variance clipping, tile-dilated motion blur, Karis bloom pyramid, GPU EV100 metering, procedural 33³ grade LUT, AgX composite |
-| `materials` | GPU texture forge: 19 procedural surfaces (concrete, brick, plaster, asphalt, sand, rusted/painted/brushed metal, wood, fabric, burlap, glass…), periodic noise so everything tiles seamlessly, Sobel height→normal, parallax occlusion mapping, triplanar projection, curvature-driven edge wear |
-| `sky` | Atmospheric scattering, time of day, PMREM environment generation, volumetric fog and light shafts |
-| `world` | ~120×120 m market street: modular building kit with real wall thickness, enterable interiors, several hundred instanced props |
-| `physics` | Written from scratch, no library. Binned-SAH BVH (29k tris → 14k nodes in 22 ms, 0.25 µs/raycast), swept-capsule character controller with a 5-plane crease stack, impulse rigid bodies with CCD, PBD ragdolls, multi-layer bullet penetration |
-| `player` | Movement state machine, slide/mantle/lean, camera feel |
-| `weapons` | Procedural weapon geometry, viewmodel rig, ADS, spring recoil, procedural reloads, ballistics with travel time and drop |
-| `fx` | GPU particles, decals, tracers, muzzle flash, explosions |
-| `ai` | Skinned soldiers, navmesh pathing, perception, cover behaviour, ragdoll death |
-| `ui` | DOM/CSS HUD: crosshair, hitmarkers, minimap, compass, killfeed |
-| `audio` | Web Audio synthesis — no sound files. Layered weapon fire, convolution reverb, HRTF spatialisation, occlusion |
+**NOV 19–20 · SAN DIEGO · [FINTECHNERDCON.COM](https://fintechnerdcon.com)**
 
-`ARCHITECTURE.md` is the contract the agents worked against: subsystem interface,
-directory ownership, the cross-subsystem event vocabulary, and shared surface types.
+The conference for people who read bank rails documentation for fun. The game is the warm-up.
 
-## Tooling
+## License
 
-The interesting part of this repo is arguably the harness, not the game.
-
-| tool | purpose |
-|---|---|
-| `tools/capture.mjs` | Screenshot one named shot via GPU-backed headless Chromium |
-| `tools/shotset.mjs` | All 11 shots in one session — fast review set |
-| `tools/baseline.mjs` | **Reproducible** capture: each shot in an isolated page, fixed frame budget. Bit-identical across runs |
-| `tools/imagediff.mjs` | Per-pixel gate. Exits non-zero if any pixel moved |
-| `tools/profile.mjs` | Gameplay profiler at real device pixel ratio. Frame-time *distribution* and hitch attribution via per-frame WebGL program counts |
-| `tools/playtest.mjs` | Scripted movement/fire smoke test |
-
-Two findings worth recording, because both invalidated earlier measurements:
-
-**Median frame time hides the actual problem.** A static-camera benchmark reported
-94 fps while the game was unplayable. Real gameplay at Retina DPR (internal 3.34 MP,
-not 2.07) ran 12–17 fps with **728–1236 ms stalls** caused by 34+ WebGL programs
-compiling lazily mid-frame. `profile.mjs` reports p50/p95/p99 and attributes each
-hitch, which is what surfaced it.
-
-**Captures were not reproducible.** `shotset.mjs` reuses one page across all 11
-shots, so particle age, decal buffers and exposure state leak forward — two identical
-runs differed on 10 of 11 shots. `baseline.mjs` isolates each shot in a fresh page,
-which is bit-identical and is what makes `imagediff.mjs` a usable gate.
-
-## Performance
-
-Measured on an Apple silicon laptop at 1512×982, DPR 2 (3.34 MP internal), `ultra` preset,
-3 runs, gameplay in motion with AI and firing active:
-
-| | before optimization | after |
-|---|---|---|
-| fps p50 | 12–17 | **28–30** |
-| fps p99 | 4–9 | **14–17** |
-| worst frame | 728–1236 ms | **66–82 ms** |
-| shader compiles during play | 34–35 | **0** |
-| boot | ~9–12 s | **3.7–4.6 s** |
-
-The optimization pass was constrained to produce **zero visual change**, enforced by
-`imagediff.mjs` rather than by assertion — the shipped build is bit-identical to its
-pre-optimization reference across all 11 shots.
-
-Shader pre-warm (`src/core/prewarm.js`) is what removed the stalls. Making it
-*provably* pixel-neutral required first fixing subsystems that animated off
-`performance.now()` instead of the engine clock, since any change to boot duration
-otherwise shifted output.
-
-## Honest assessment
-
-The goal was to match a modern Call of Duty. **It does not.**
-
-Eleven independent adversarial critics scored the frames against that bar. Scores
-went 3.59 → 4.14 → 4.05 → **5.05** out of 10. Two shots reached "CLOSE"; the rest
-remain "AMATEUR". In a blind A/B, **every critic in every round picked the real Call
-of Duty frame.**
-
-Where it falls short, specifically:
-
-- **Hands.** Blocky finger slabs that don't convincingly grip the weapon.
-- **Material richness.** Surfaces read as procedural noise rather than photographed
-  reality at close range — the ceiling of generating texture from code.
-- **Characters.** Enemies read as mannequins at distance.
-- **Indirect light.** An approximation, not real GI.
-- **Frame rate.** 28–30 fps at Retina. The art passes tripled geometry cost
-  (5.9M → 11.3M triangles) and optimization recovered about half.
-
-A known root cause remains unfixed: the viewmodel light rig in `render/index.js`
-delivers roughly 20× the irradiance per unit albedo that the world does — a plain
-*black* material in the view scene renders at L=110 against a background of 91,
-purely from F0=0.04. Every weapon albedo is cheated to a third of physical to
-compensate, which caps material separation on the most-looked-at object in the game.
-
-## Process note
-
-Sequential single-owner passes beat parallel fan-out decisively. Three rounds of six
-agents each owning one directory moved the score +0.46 and left frame-ruining defects
-*higher* than they started (60 → 47 → 66), because tonemapping, sky and indirect light
-are one coupled system and isolated agents kept breaking each other's assumptions.
-One sequential pass with a single owner per coupled concern moved it +1.00 and cut
-defects 66 → 26.
-
-The most valuable single result came from an agent contradicting its own brief. Every
-critic for three rounds reported the weapon as "untextured". It wasn't — it was
-specular-dominated, with the diffuse term measured at L=26 against a shipped L=67.
-Prior rounds had been crushing albedos to fight bright-part complaints, which killed
-diffuse and made it worse. The fix was the opposite of what was asked for.
+MIT. Original engine and game by [Matt Shumer](https://github.com/mshumer). Thank you for open-sourcing something this good. NerdCon conversion by Fintech NerdCon.

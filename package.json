@@ -1,5 +1,5 @@
 {
-  "name": "claude-of-duty",
+  "name": "nerd-of-duty",
   "version": "1.0.0",
   "scripts": {
     "dev": "vite",
@@ -8,7 +8,7 @@
     "shot": "node tools/capture.mjs"
   },
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "three": "^0.180.0"
