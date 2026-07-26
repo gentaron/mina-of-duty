@@ -18,14 +18,25 @@ export const STREET = {
   zMax: 46,
 };
 
-/** Alleys and open ground, as rects [x0, z0, x1, z1]. */
+/**
+ * Alleys and open ground, as rects [x0, z0, x1, z1].
+ *
+ * INVARIANT: x0 < x1 AND z0 < z1. Every consumer treats these as min/max, not
+ * as an ordered pair, and a reversed axis silently deletes the rect three
+ * different ways: `ground.js` scales the visual floor box and its collision
+ * proxy by a NEGATIVE extent (flipped winding — the slab renders inside-out and
+ * is culled from every outside view), `dressing.isOpen()` tests
+ * `z > z0 && z < z1` and can never be true, and `dressing.scatterDebris()`
+ * computes a negative area so the junk loop runs zero times. The gravel yard
+ * below shipped reversed and was a 22.5 x 16 m hole in the map because of it.
+ */
 export const ALLEYS = [
   { rect: [-27, -12.2, -6.5, -8.2], surface: 'dirt' }, // west alley (mid street)
   { rect: [-26, 20.2, -6.5, 24.2], surface: 'dirt' }, // west alley (near)
   { rect: [-25, 5.6, -6.5, 9.6], surface: 'dirt' }, // west courtyard — lets the
   // late sun through onto the market, and flanks the main street
   { rect: [6.5, 1.8, 29, 7.8], surface: 'dirt' }, // east alley — main flank
-  { rect: [6.5, -14.2, 29, -30.2], surface: 'gravel' }, // yard behind the ruin
+  { rect: [6.5, -30.2, 29, -14.2], surface: 'gravel' }, // yard behind the ruin
   { rect: [-30, -50, 30, -44], surface: 'dirt' }, // far cross street
 ];
 
@@ -406,7 +417,12 @@ export const SET_PIECES = {
     [5.9, -24.0, Math.PI / 2],
     [-5.9, -36.0, -Math.PI / 2],
   ],
-  /** Overhead cable spans: [x0, y0, z0, x1, y1, z1, sag] */
+  /**
+   * Overhead cable spans: [x0, y0, z0, x1, y1, z1, sag]
+   * 0-3 cross the street and carry the NerdCon banners; 4 and 5 run ALONG a
+   * facade (constant x). 5 spans the east alley mouth and carries the ticker
+   * ribbon (see nerdcon.js `tickerBoard`).
+   */
   cables: [
     [-6.4, 7.2, 10.0, 6.4, 6.6, 12.5, 1.1],
     [-6.4, 8.4, -2.0, 6.4, 7.9, -0.5, 1.4],

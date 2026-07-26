@@ -454,13 +454,9 @@ export const PALETTE = {
       weather: [0.5, 0.45, 0.5, 0.6],
     },
   },
-  /** A dark screen with a faint cyan glow — ATM display. Bloom-friendly. */
-  nerdcon_screen: {
-    name: 'glass',
-    surface: 'glass',
-    opts: {
-      scale: 1.0,
-      three: { emissive: 0x0c343a, emissiveIntensity: 0.7, opacity: 0.92, toneMapped: true },
-    },
-  },
+  // NOTE: the ATM display was a merged emissive box on a `nerdcon_screen` key
+  // here. It is now a live 256x128 canvas (`nerdcon.js` -> `atmScreen`) that
+  // shows the run's balance, so it owns its own material and this key is gone.
+  // Removing it also removed the batch it was the only member of, which is what
+  // paid for the canvas mesh's draw calls.
 };
