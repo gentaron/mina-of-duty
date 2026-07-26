@@ -1,4 +1,5 @@
 import { el, setText, setStyle, setClass, clamp01, damp, ease } from './util.js';
+import { InitialsEntry } from './initials.js';
 
 /**
  * ===========================================================================
@@ -59,9 +60,13 @@ function fade(node, shown, open) {
 /* -------------------------------------------------------------- attract --- */
 
 export class AttractScreen {
-  /** @param {(jobId:string)=>void} onSelect */
-  constructor(parent, onSelect) {
+  /**
+   * @param {(jobId:string)=>void} onSelect
+   * @param {()=>void} [onBoards] title-screen route to the leaderboard
+   */
+  constructor(parent, onSelect, onBoards) {
     this.onSelect = onSelect;
+    this.onBoards = onBoards;
     this.root = el('div', 'ow-attract', parent);
     const inner = el('div', 'ow-att-inner', this.root);
 
@@ -87,6 +92,17 @@ export class AttractScreen {
     }
 
     el('div', 'ow-att-hint', inner, 'CREDIT 1 · CLICK TO DEPLOY');
+
+    // One input from the title to the board — the loop quality bar's "<= 2
+    // inputs to any screen" applies to the social object too.
+    const meta = el('div', 'ow-att-meta', inner);
+    this.boardBtn = el('button', 'ow-att-link', meta, 'SEE THE BOARD ▸');
+    this.boardBtn.type = 'button';
+    this.boardBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.onBoards?.();
+    });
+
     el('div', 'ow-att-footer', inner, 'NOV 19–20 · SAN DIEGO · FINTECHNERDCON.COM');
 
     this.open = false;
@@ -185,11 +201,29 @@ export class DeathScreen {
 
 /* ------------------------------------------------------------ game over --- */
 
+/**
+ * RUN SETTLED, plus everything the run turns into: initials → the board →
+ * a share card. The card has four states, driven by the UI system:
+ *
+ *   entry     initials selector armed (the default)
+ *   filed     "RANK #12 OF 1,204" + share row
+ *   queued    offline; the submit is in localStorage and will drain later
+ *   closed    the player skipped, or there is no network at all
+ *
+ * Only the score/stat block is ever visible in all four — the rest swaps.
+ */
 export class GameOverScreen {
-  /** @param {()=>void} onRestart */
-  constructor(parent, onRestart) {
+  /**
+   * @param {HTMLElement} parent
+   * @param {{onRestart:()=>void, onSubmit:(initials:string)=>void,
+   *          onSkip:()=>void, onShare:()=>void, onCopy:()=>void,
+   *          onBoards:()=>void}} cbs
+   */
+  constructor(parent, cbs = {}) {
+    const { onRestart, onSubmit, onSkip, onShare, onCopy, onBoards } = cbs;
     this.onRestart = onRestart;
-    this.root = el('div', 'ow-screen', parent);
+    this.onBoards = onBoards;
+    this.root = el('div', 'ow-screen nod-modal', parent);
     const card = el('div', 'ow-screen-card', this.root);
 
     this.kicker = el('div', 'ow-sc-kicker', card, 'THE LEDGER HELD');
@@ -205,16 +239,87 @@ export class GameOverScreen {
       this.stat[key] = el('div', 'v', s, '—');
     }
 
-    el('div', 'ow-sc-tease', card, 'COMPLIANCE OFFICER — REACH WAVE 8 TO PREVIEW');
+    this.tease = el('div', 'ow-sc-tease', card, 'COMPLIANCE OFFICER — REACH WAVE 8 TO PREVIEW');
+
+    // ---- initials → board ------------------------------------------------
+    this.initials = new InitialsEntry(card, {
+      onSubmit: (v) => onSubmit?.(v),
+      onSkip: () => onSkip?.(),
+    });
+
+    // ---- share row (revealed once the run is filed or queued) ------------
+    this.shareRow = el('div', 'ow-sc-share', card);
+    this.shareBtn = el('button', 'ow-btn', this.shareRow, 'SHARE THE CARD');
+    this.shareBtn.type = 'button';
+    this.shareBtn.addEventListener('click', () => onShare?.());
+    this.copyBtn = el('button', 'ow-btn', this.shareRow, 'COPY LINK');
+    this.copyBtn.type = 'button';
+    this.copyBtn.addEventListener('click', () => onCopy?.());
+    setStyle(this.shareRow, 'display', 'none');
 
     const actions = el('div', 'ow-sc-actions', card);
     this.restartBtn = el('button', 'ow-btn primary', actions, 'RUN IT BACK');
     this.restartBtn.type = 'button';
     this.restartBtn.addEventListener('click', () => this.onRestart?.());
+    this.boardsBtn = el('button', 'ow-sc-ghost', actions, 'SEE THE BOARD');
+    this.boardsBtn.type = 'button';
+    this.boardsBtn.addEventListener('click', () => this.onBoards?.());
 
     this.open = false;
     this.shown = 0;
     setStyle(this.root, 'display', 'none');
+  }
+
+  /* ------------------------------------------------------ submit states -- */
+
+  /** Arm the initials selector. @param {string|null} lastInitials */
+  armEntry(lastInitials) {
+    setStyle(this.shareRow, 'display', 'none');
+    setStyle(this.tease, 'display', 'none');
+    this.initials.show(lastInitials);
+  }
+
+  /** No network client at all (capture mode) — hide the whole submit block. */
+  disableEntry() {
+    this.initials.hide();
+    setStyle(this.shareRow, 'display', 'none');
+    setStyle(this.tease, 'display', '');
+  }
+
+  setSubmitting() {
+    this.initials.setBusy(true, 'FILING…');
+    this.initials.setStatus('');
+  }
+
+  /** @param {{rank:number,total:number}} r */
+  setFiled({ rank, total }) {
+    const pos = rank ? `RANK #${rank.toLocaleString('en-US')}` : 'FILED';
+    const of = total ? ` OF ${total.toLocaleString('en-US')}` : '';
+    this.initials.settle(`${pos}${of} · ON THE BOARD`, 'ok');
+    setStyle(this.shareRow, 'display', '');
+    setStyle(this.copyBtn, 'display', '');
+  }
+
+  setQueued() {
+    this.initials.settle('QUEUED — IT SETTLES WHEN THE WIFI DOES', 'ok');
+    setStyle(this.shareRow, 'display', '');
+    setStyle(this.copyBtn, 'display', 'none'); // no row id yet, so no link
+  }
+
+  /** @param {string} message uppercase, terse */
+  setRejected(message) {
+    this.initials.setBusy(false, 'FILE IT WITH THE BOARD');
+    this.initials.setStatus(message, 'err');
+  }
+
+  setSkipped() {
+    this.initials.hide();
+    setStyle(this.shareRow, 'display', 'none');
+    setStyle(this.tease, 'display', '');
+  }
+
+  setShareStatus(message) {
+    this.initials.setStatus(message, 'ok');
   }
 
   /** @param {object} d game:over payload */
@@ -255,14 +360,17 @@ export class GameOverScreen {
 
   hide() {
     this.open = false;
+    this.initials.hide();
   }
 
   update(rawDt) {
     this.shown = damp(this.shown, this.open ? 1 : 0, 15, rawDt);
     fade(this.root, this.shown, this.open);
+    this.initials.update(rawDt);
   }
 
   dispose() {
+    this.initials.dispose();
     this.root.remove();
   }
 }

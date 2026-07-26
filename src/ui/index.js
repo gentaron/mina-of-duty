@@ -14,11 +14,32 @@ import { Prompt, Banner } from './prompts.js';
 import { PauseMenu } from './menu.js';
 import { CombatDemo } from './demo.js';
 import { AttractScreen, DeathScreen, GameOverScreen } from './screens.js';
+import { BoardsScreen } from './boards.js';
+import { CabinetMode } from './cabinet.js';
+import { shareRun, copyLink } from './sharecard.js';
 
 /** Enemy callsigns (LEGACY CORE SECURITY) used when an event omits a name. */
 const CALLSIGNS = ['COBOL', 'BATCH', 'FAX', 'MAINFRAME', 'T+2', 'MT-103', 'MICR', 'IVR', 'PDF_STMT', 'LEDGERLOCK'];
 
 const MAX_BLIPS = 48;
+
+/**
+ * submit-score error codes → Arcade Terminal copy. Terse, uppercase, and it
+ * always tells the player what to DO next — an error message that only names
+ * the fault is a dead end on a cabinet with a queue behind it.
+ */
+const SUBMIT_ERRORS = {
+  bad_initials: 'THREE LETTERS A–Z.',
+  blocked_initials: 'NOT ON A CONFERENCE SCREEN. PICK ANOTHER THREE.',
+  bad_job: 'RUN DATA CORRUPT — RUN IT BACK.',
+  out_of_range: 'RUN DATA CORRUPT — RUN IT BACK.',
+  implausible: 'THE LEDGER DOES NOT BALANCE. THIS RUN WAS NOT FILED.',
+  rate_limited: 'TOO MANY FILINGS THIS HOUR. COOL OFF.',
+  bad_token: 'RUN TOKEN EXPIRED — RUN IT BACK.',
+  token_spent: 'ALREADY FILED.',
+  insert_failed: 'THE BOARD IS DOWN. TRY AGAIN.',
+  server_error: 'THE BOARD IS DOWN. TRY AGAIN.',
+};
 
 /**
  * ===========================================================================
@@ -96,7 +117,11 @@ export class UiSystem {
     this.banner = new Banner(this.chromeLayer);
 
     // Arcade meta-screens (over the HUD chrome, under the pause menu).
-    this.attract = new AttractScreen(this.root, (job) => this._startRun(job));
+    this.attract = new AttractScreen(
+      this.root,
+      (job) => this._startRun(job),
+      () => this.showBoards()
+    );
     this.death = new DeathScreen(this.root, {
       onContinue: () => {
         this.death.hide();
@@ -107,12 +132,39 @@ export class UiSystem {
         ctx.events.emit('ui:accept', {});
       },
     });
-    this.over = new GameOverScreen(this.root, () => {
-      this.over.hide();
-      this._resetRunState();
-      ctx.events.emit('ui:restart', {});
-      ctx.input?.requestPointerLock?.();
+    this.over = new GameOverScreen(this.root, {
+      onRestart: () => {
+        this.over.hide();
+        this._resetRunState();
+        ctx.events.emit('ui:restart', {});
+        ctx.input?.requestPointerLock?.();
+      },
+      onSubmit: (initials) => this._submitScore(initials),
+      onSkip: () => this.over.setSkipped(),
+      onShare: () => this._shareRun(),
+      onCopy: () => this._copyShareLink(),
+      onBoards: () => this.showBoards(),
     });
+
+    // THE BOARD. Reads through the game subsystem's leaderboard client at
+    // runtime (ctx.peek), never an import — src/ui owns no network code.
+    this.boards = new BoardsScreen(this.root, {
+      fetchBoard: (opts) => this._fetchBoard(opts),
+      onClose: () => this.hideBoards(),
+    });
+
+    // `?cabinet=1`: fullscreen, attract loop, 60s idle reset.
+    this.cabinet = new CabinetMode(this.root, {
+      onPage: (page) => this._cabinetPage(page),
+      onIdleReset: () => this._cabinetIdleReset(),
+    });
+
+    /** Result of the last submit — drives the share card + board highlight. */
+    this._lastSubmit = null;
+    /** The run behind the current game-over card. */
+    this._runData = null;
+    /** Which screen the boards overlay was opened from, so BACK returns there. */
+    this._boardsFrom = null;
 
     this.menu = new PauseMenu(this.root, ctx);
 
@@ -311,7 +363,9 @@ export class UiSystem {
     on('game:over', (e) => {
       this.death.hide();
       this.attract.hide();
+      this.hideBoards();
       this.over.show(e ?? {});
+      this._armSubmit(e ?? {});
       this.sfx('run_over', 0.8);
     });
 
@@ -322,6 +376,7 @@ export class UiSystem {
       this.attract.hide();
       this.death.hide();
       this.over.hide();
+      this.hideBoards();
     });
 
     this.resize(ctx.canvas.clientWidth || innerWidth, ctx.canvas.clientHeight || innerHeight, ctx);
@@ -413,17 +468,22 @@ export class UiSystem {
       case 'attract':
         this.death.hide();
         this.over.hide();
+        this.hideBoards();
         this._resetRunState();
+        this._lastSubmit = null;
+        this._runData = null;
         this.attract.show();
         break;
       case 'play':
         this.attract.hide();
         this.death.hide();
         this.over.hide();
+        this.hideBoards();
         break;
       case 'down':
         this.attract.hide();
         this.over.hide();
+        this.hideBoards();
         if (!this.death.open) this.death.show({ canContinue: false });
         break;
       case 'over':
@@ -434,6 +494,135 @@ export class UiSystem {
       default:
         break;
     }
+    this.cabinet?.setGameState(state);
+  }
+
+  /* ================================================================== */
+  /* leaderboard · share · boards · cabinet                             */
+  /* ================================================================== */
+
+  /**
+   * The Supabase client, owned by src/game. Reached at runtime so this
+   * subsystem never imports another's module (ARCHITECTURE.md rule 2), and so
+   * the HUD still works with no `game` subsystem registered at all.
+   */
+  _leaderboard() {
+    const lb = this.ctx.peek('game')?.leaderboard;
+    return lb?.enabled ? lb : null;
+  }
+
+  /** game:over → put the initials selector in front of the player. */
+  _armSubmit(d) {
+    const lb = this._leaderboard();
+    this._lastSubmit = null;
+    this._runData = {
+      job: d.job ?? this.state.job ?? 'fraud-analyst',
+      score: Math.max(0, Math.round(d.score ?? 0)),
+      wave: Math.max(1, Math.round(d.wave ?? 1)),
+      kills: Math.max(0, Math.round(d.kills ?? 0)),
+      accuracy: d.accuracy ?? null,
+      duration_s: Math.max(0, Math.round(d.durationS ?? 0)),
+      continued: d.continued === true,
+    };
+    if (!lb) {
+      this.over.disableEntry();
+      return;
+    }
+    this.over.armEntry(lb.lastInitials?.() ?? null);
+  }
+
+  async _submitScore(initials) {
+    const lb = this._leaderboard();
+    if (!lb || !this._runData) return;
+    this.over.setSubmitting();
+
+    const res = await lb.submit({ ...this._runData, initials });
+
+    if (res.ok) {
+      this._lastSubmit = res;
+      this.over.setFiled({ rank: res.rank, total: res.total });
+      this.sfx('wave_clear', 0.6);
+      return;
+    }
+    if (res.queued) {
+      this._lastSubmit = { id: null, queued: true };
+      this.over.setQueued();
+      return;
+    }
+    this.over.setRejected(SUBMIT_ERRORS[res.error] ?? res.detail ?? 'THE BOARD REFUSED IT. TRY AGAIN.');
+  }
+
+  async _shareRun() {
+    if (!this._runData) return;
+    const lb = this._leaderboard();
+    const id = this._lastSubmit?.id;
+    const url = id && lb ? lb.shareUrl(id) : 'https://nerd-of-duty.vercel.app';
+    const initials = lb?.lastInitials?.() ?? 'AAA';
+    const result = await shareRun({ ...this._runData, initials }, url);
+    lb?.beacon('share', { job: this._runData.job, wave: this._runData.wave, score: this._runData.score });
+    this.over.setShareStatus(
+      { shared: 'SHARED.', downloaded: 'CARD SAVED TO YOUR DOWNLOADS.', cancelled: '', failed: 'COULD NOT BUILD THE CARD.' }[
+        result
+      ] ?? ''
+    );
+  }
+
+  async _copyShareLink() {
+    const lb = this._leaderboard();
+    const id = this._lastSubmit?.id;
+    if (!id || !lb) return;
+    const ok = await copyLink(lb.shareUrl(id));
+    lb.beacon('share', { job: this._runData?.job, wave: this._runData?.wave, score: this._runData?.score });
+    this.over.setShareStatus(ok ? 'LINK COPIED.' : 'COPY BLOCKED — SELECT THE URL BY HAND.');
+  }
+
+  _fetchBoard(opts) {
+    const lb = this._leaderboard();
+    if (!lb) return Promise.resolve({ ok: false, error: 'offline' });
+    return lb.board(opts);
+  }
+
+  /** Open THE BOARD. TODAY is the featured board on a cabinet. */
+  showBoards(tab) {
+    if (this.boards.open) return;
+    this._boardsFrom = this.attract.open ? 'attract' : this.over.open ? 'over' : null;
+    this.attract.hide();
+    this.over.hide();
+    this.boards.show({
+      tab: tab ?? (this.cabinet?.active ? 'today' : 'global'),
+      highlightId: this._lastSubmit?.id ?? null,
+    });
+  }
+
+  hideBoards() {
+    if (!this.boards.open) return;
+    this.boards.hide();
+    if (this._boardsFrom === 'attract') this.attract.show();
+    else if (this._boardsFrom === 'over') this.over.show();
+    this._boardsFrom = null;
+  }
+
+  /** Cabinet attract loop page change: title card ↔ the two featured boards. */
+  _cabinetPage(page) {
+    if (page === 'title') {
+      this.boards.hide();
+      this._boardsFrom = null;
+      this.attract.show();
+      return;
+    }
+    this.attract.hide();
+    this.over.hide();
+    this._boardsFrom = 'attract';
+    this.boards.show({ tab: page, highlightId: null });
+  }
+
+  _cabinetIdleReset() {
+    this.boards.hide();
+    this.over.hide();
+    this.death.hide();
+    this.menu.close();
+    this._boardsFrom = null;
+    this.ctx.events.emit('ui:attract', {});
   }
 
   /* ---------------------------------------------------------------- api --- */
@@ -530,6 +719,7 @@ export class UiSystem {
     this.attract.hide();
     this.death.hide();
     this.over.hide();
+    this.boards.hide();
     if (name === 'clean') {
       this.demo?.stop(this);
       this.demo = null;
@@ -672,6 +862,8 @@ export class UiSystem {
     this.attract.update(rawDt);
     this.death.update(rawDt);
     this.over.update(rawDt);
+    this.boards.update(rawDt);
+    this.cabinet.update(rawDt);
 
     this._buildCompassObjectives(pos);
     this.compass.update(heading, this._compassObjs);
@@ -769,6 +961,8 @@ export class UiSystem {
     this.attract.dispose();
     this.death.dispose();
     this.over.dispose();
+    this.boards.dispose();
+    this.cabinet.dispose();
     this.menu.dispose();
     this.root.remove();
     removeStyles();

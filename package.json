@@ -11,6 +11,7 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
+    "@vercel/og": "^0.6.5",
     "three": "^0.180.0"
   },
   "devDependencies": {

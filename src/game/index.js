@@ -33,10 +33,23 @@
  *   - Job loadouts set the weapon via `weapons.setWeaponImmediate(id)` and, for
  *     the compliance officer's "max armour", raise the live `player.health.max`
  *     (there is no armour subsystem to hook).
+ *
+ * LEADERBOARD (added with the launch roadmap)
+ *   `game.leaderboard` is the Supabase client (see leaderboard.js). The UI
+ *   reaches it through `ctx.peek('game').leaderboard` — never an import, per
+ *   ARCHITECTURE.md. A run token is requested at ui:startRun and NOT awaited;
+ *   the loop is identical whether or not the network answers. `game:over` now
+ *   also carries `job`, `durationS` and `continued`, which is everything
+ *   submit-score needs to validate the run.
+ *
+ * ADDED EVENTS (beyond the contract's canonical set)
+ *   `ui:attract` — UI → game. Abandon whatever is on screen and return to the
+ *   attract state. Cabinet mode's 60-second idle reset is the only caller.
  */
 
 import { Scoring } from './scoring.js';
 import { CONCURRENT_CAP, BREATHER_S, waveGoal, waveIntensity, waveBonus } from './waves.js';
+import { Leaderboard } from './leaderboard.js';
 
 /** job id (normalised) → { weapon id, armour multiplier on base max health }. */
 const LOADOUTS = {
@@ -83,6 +96,20 @@ export class GameSystem {
     // slow-mo death beat (raw-time deadline; never runs in capture)
     this._deathBeatUntil = 0;
 
+    // run clock (wall time, for the plausibility check server-side)
+    this._runStartedMs = 0;
+    this._runDuration = 0;
+
+    // Leaderboard client. Disabled under ?capture=1 so the screenshot harness
+    // is never network-bound. `?cabinet=1` only tags the telemetry.
+    const params = this._params();
+    this.leaderboard = new Leaderboard({
+      enabled: !ctx.config?.deterministic,
+      cabinet: params.get('cabinet') === '1',
+    });
+    /** Last settled run, for the initials/share UI. Null until the first game over. */
+    this.lastRun = null;
+
     this.scoring = new Scoring((type, data) =>
       ctx.events.emit(type === 'score' ? 'game:score' : 'game:mult', data)
     );
@@ -96,7 +123,19 @@ export class GameSystem {
     this._installDebugApi();
 
     this._setState('attract');
+    // Anything stranded by a dead network last session goes up now, before the
+    // player has done anything that could compete for bandwidth.
+    this.leaderboard.drain();
     console.info('[game] HOLD THE LEDGER ready — state=attract');
+  }
+
+  /** URLSearchParams, or an empty stand-in in a non-browser build step. */
+  _params() {
+    try {
+      return new URLSearchParams(location.search);
+    } catch {
+      return new URLSearchParams('');
+    }
   }
 
   /* ================================================================== */
@@ -111,6 +150,7 @@ export class GameSystem {
     on('ui:continue', () => this.continueRun());
     on('ui:restart', () => this.restart());
     on('ui:accept', () => this.accept()); // additive: "ACCEPT THE LOSS" → over
+    on('ui:attract', () => this.attract()); // additive: cabinet idle reset
 
     on('player:death', () => this._onPlayerDeath());
     on('actor:death', (e) => this._onActorDeath(e));
@@ -185,6 +225,14 @@ export class GameSystem {
 
     this._hits = 0;
     this._shotsAtRunStart = this.ctx.peek('weapons')?.stats?.fired ?? 0;
+    this._runStartedMs = Date.now();
+    this._runDuration = 0;
+
+    // Both of these are deliberately un-awaited: the wave spawns on the same
+    // tick whether the network answers in 40 ms or never.
+    this.leaderboard.requestToken();
+    this.leaderboard.drain();
+    this.leaderboard.beacon('run_start', { job: norm });
 
     this._setState('play');
     this._startWave(1);
@@ -263,6 +311,20 @@ export class GameSystem {
     if (this.wave > this._bestWave) this._bestWave = this.wave;
     this._saveBest();
 
+    this._runDuration = this._runStartedMs ? Math.max(0, Math.round((Date.now() - this._runStartedMs) / 1000)) : 0;
+
+    // Everything submit-score validates, in one object the UI can hand straight
+    // to leaderboard.submit() with only `initials` added.
+    this.lastRun = {
+      job: this.job ?? this._lastJob ?? DEFAULT_JOB,
+      score,
+      wave: Math.max(1, this.wave),
+      kills: this.scoring.kills,
+      accuracy,
+      duration_s: this._runDuration,
+      continued: this._continueUsed,
+    };
+
     this._setState('over');
     this.ctx.events.emit('game:over', {
       score,
@@ -272,8 +334,35 @@ export class GameSystem {
       best: this._best,
       bestWave: this._bestWave,
       newBest,
+      // additive — the leaderboard/share layer reads these off the same event
+      job: this.lastRun.job,
+      durationS: this._runDuration,
+      continued: this._continueUsed,
+    });
+    this.leaderboard.beacon('run_end', {
+      job: this.lastRun.job,
+      wave: this.lastRun.wave,
+      score: this.lastRun.score,
     });
     console.info(`[game] run settled — score=${score} wave=${this.wave} kills=${this.scoring.kills}`);
+  }
+
+  /**
+   * ui:attract / NOD.attract — drop everything and go back to the title. Used
+   * by cabinet mode's idle reset; never fires mid-run (the cabinet only arms it
+   * on menus and the game-over card).
+   */
+  attract() {
+    this._endDeathBeat();
+    this._waveActive = false;
+    this._breather = 0;
+    this.wave = 0;
+    this._clearAI();
+    this.scoring.reset();
+    this.scoring.announce();
+    this.ctx.peek('player')?.setControlEnabled?.(true);
+    this._setState('attract');
+    console.info('[game] idle → attract');
   }
 
   /* ================================================================== */
@@ -542,6 +631,9 @@ export class GameSystem {
       accuracy: this._accuracy(),
       best: this._best,
       aliveEnemies: this._aliveInWave,
+      job: this.job,
+      durationS: this._runStartedMs ? Math.round((Date.now() - this._runStartedMs) / 1000) : 0,
+      queued: this.leaderboard?.queued ?? 0,
     };
   }
 
@@ -581,6 +673,12 @@ export class GameSystem {
         skipToWave: (n) => self.skipToWave(n),
         god: (b) => self.god(b),
         killAll: () => self._killAllLive(),
+        // launch-roadmap additions (leaderboard / share / cabinet verification)
+        attract: () => self.attract(),
+        get lastRun() {
+          return self.lastRun;
+        },
+        leaderboard: self.leaderboard,
       };
     } catch {
       /* no window (headless build step) — the loop still runs */

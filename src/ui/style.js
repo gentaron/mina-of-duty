@@ -831,6 +831,21 @@ const CSS = `
   text-shadow: 0 0 calc(14px * var(--k)) rgba(255,215,0,.5);
 }
 @keyframes ow-blink { 0%,100%{opacity:1} 50%{opacity:.45} }
+/* Title-screen route to the leaderboard. Cyan = interactive; deliberately a
+   quiet link, not a button — deploying is still the primary action. */
+.ow-att-meta { margin-top: calc(var(--u) * 3.5); }
+.ow-att-link {
+  appearance:none; background:transparent; border:0; cursor:pointer;
+  font-family: var(--ff); text-transform:uppercase;
+  font-size: calc(10.5px * var(--k)); letter-spacing:.3em; color: var(--cyan);
+  padding: calc(var(--u) * 1.2) calc(var(--u) * 2);
+  border-bottom: 1px solid rgba(0,229,255,.28);
+  transition: color .14s, border-color .14s, text-shadow .14s;
+}
+.ow-att-link:hover {
+  color: #7ef2ff; border-bottom-color: var(--cyan);
+  text-shadow: 0 0 calc(12px * var(--k)) rgba(0,229,255,.5);
+}
 .ow-att-footer {
   margin-top: calc(var(--u) * 4); font-size: calc(9.5px * var(--k)); letter-spacing:.34em; color: var(--ink-3);
 }
@@ -905,6 +920,166 @@ const CSS = `
   transition: color .14s, border-color .14s;
 }
 .ow-sc-ghost:hover { color: var(--ink); border-color: var(--hair); }
+
+/* ====================================================== initials selector
+   The 1983 interaction: three fixed slots, a wheeling letter, a blinking
+   cursor. The blink is a CSS custom property (--cur) written from
+   initials.js update(), not a keyframe, so the capture harness stays
+   deterministic. Gold, because these three letters ARE the score. */
+.ow-init { margin: 0 0 calc(var(--u) * 5); }
+.ow-init-lbl {
+  font-size: calc(9.5px * var(--k)); letter-spacing:.4em; color: var(--ink-2);
+  margin-bottom: calc(var(--u) * 3);
+}
+.ow-init-rack { display:flex; justify-content:center; gap: calc(var(--u) * 3); }
+.ow-init-slot {
+  --cur: 0;
+  position:relative; width: calc(64px * var(--k));
+  display:flex; flex-direction:column; align-items:center; gap: calc(var(--u) * .5);
+}
+.ow-init-arrow {
+  appearance:none; background:transparent; border:0; cursor:pointer;
+  color: var(--ink-3); font-size: calc(11px * var(--k)); line-height:1;
+  padding: calc(var(--u) * .8) calc(var(--u) * 2);
+  transition: color .12s;
+}
+.ow-init-arrow:hover { color: var(--cyan); }
+.ow-init-ch {
+  width:100%; cursor:pointer;
+  font-family: var(--fd); font-weight:800; font-size: calc(44px * var(--k));
+  line-height: calc(58px * var(--k)); letter-spacing:0; color: var(--gold);
+  background: rgba(255,215,0,.04);
+  border: 1px solid rgba(255,215,0,.20);
+  box-shadow: inset 0 0 calc(20px * var(--k)) rgba(255,215,0,.05);
+  text-shadow: 0 0 calc(18px * var(--k)) rgba(255,215,0,.28);
+}
+/* The cursor: an underscore that blinks by opacity, arcade-correct. */
+.ow-init-slot::after {
+  content:''; position:absolute; left: calc(var(--u) * 2); right: calc(var(--u) * 2);
+  bottom: calc(22px * var(--k)); height: calc(3px * var(--k));
+  background: var(--cyan); opacity: var(--cur);
+  box-shadow: 0 0 calc(10px * var(--k)) rgba(0,229,255,.6);
+}
+.ow-init-slot.on .ow-init-ch { border-color: var(--cyan); background: rgba(0,229,255,.06); }
+.ow-init-hint {
+  margin-top: calc(var(--u) * 3); font-size: calc(9px * var(--k));
+  letter-spacing:.22em; color: var(--ink-3);
+}
+.ow-init-actions {
+  margin-top: calc(var(--u) * 4);
+  display:flex; gap: calc(var(--u) * 2.5); justify-content:center; flex-wrap:wrap;
+}
+.ow-init-status {
+  margin-top: calc(var(--u) * 3); font-size: calc(11px * var(--k));
+  letter-spacing:.2em; color: var(--ink-2);
+}
+.ow-init-status.ok  { color: var(--green); text-shadow: 0 0 calc(12px * var(--k)) rgba(57,255,20,.3); }
+.ow-init-status.err { color: var(--enemy); }
+
+/* share row on the settled card */
+.ow-sc-share {
+  display:flex; gap: calc(var(--u) * 2.5); justify-content:center; flex-wrap:wrap;
+  margin: calc(var(--u) * 4) 0 calc(var(--u) * 5);
+}
+
+/* The card grew a submit block; on a 720p laptop that can outrun the viewport.
+   Scroll inside the card rather than clipping the RUN IT BACK button. */
+.ow-screen-card { max-height: 92vh; overflow-y: auto; overflow-x: hidden; }
+.ow-screen-card::-webkit-scrollbar { width: calc(4px * var(--k)); }
+.ow-screen-card::-webkit-scrollbar-thumb { background: rgba(0,229,255,.25); }
+
+/* ================================================================= boards
+   THE BOARD — global / today / per-job. Same Arcade Terminal card language as
+   the run-end screens, widened for the table. Palette law: score is Loot Gold,
+   tabs are Cyan Pulse, the player's own row is XP Green (a gain). No magenta
+   anywhere on this screen — magenta is threat only. */
+.ow-screen.boards .ow-board-card {
+  position:relative; z-index:1; text-align:center;
+  width: min(calc(760px * var(--k)), 94vw);
+  max-height: 92vh; display:flex; flex-direction:column;
+  padding: calc(var(--u) * 7) calc(var(--u) * 7) calc(var(--u) * 5);
+  background: linear-gradient(180deg, rgba(13,13,13,.95), rgba(6,6,8,.96));
+  border: 1px solid rgba(0,229,255,.22);
+  box-shadow: 0 calc(24px * var(--k)) calc(70px * var(--k)) rgba(0,0,0,.66);
+}
+.ow-board-head { flex:0 0 auto; }
+.ow-board-title {
+  font-family: var(--fd); font-weight:800; letter-spacing:.22em;
+  font-size: calc(30px * var(--k)); margin: calc(var(--u) * 2) 0 calc(var(--u) * 1.2);
+  color: var(--gold); text-shadow: 0 0 calc(26px * var(--k)) rgba(255,215,0,.3);
+}
+.ow-board-sub { font-size: calc(9.5px * var(--k)); letter-spacing:.3em; color: var(--ink-3); }
+.ow-board-tabs {
+  flex:0 0 auto; display:flex; justify-content:center; flex-wrap:wrap; gap:0;
+  margin: calc(var(--u) * 5) 0 calc(var(--u) * 4);
+}
+.ow-board-tab {
+  appearance:none; border:1px solid var(--hair); border-right:0;
+  background: rgba(255,255,255,.03); color: var(--ink-2);
+  font-family: var(--ff); font-weight:600; text-transform:uppercase;
+  font-size: calc(9.5px * var(--k)); letter-spacing:.16em;
+  padding: calc(var(--u) * 1.6) calc(var(--u) * 2.6);
+  cursor:pointer; transition: color .12s, background .12s;
+}
+.ow-board-tab:last-child { border-right:1px solid var(--hair); }
+.ow-board-tab:hover { color: var(--ink); background: rgba(0,229,255,.10); }
+.ow-board-tab.on {
+  color:#03121a; background: var(--cyan); border-color: var(--cyan);
+  box-shadow: 0 0 calc(10px * var(--k)) rgba(0,229,255,.35);
+}
+.ow-board-cols, .ow-board-row {
+  display:grid;
+  grid-template-columns: calc(46px * var(--k)) calc(120px * var(--k)) 1fr calc(70px * var(--k)) calc(130px * var(--k));
+  align-items:center; text-align:left; gap: calc(var(--u) * 2);
+}
+.ow-board-cols {
+  flex:0 0 auto;
+  font-size: calc(8.5px * var(--k)); letter-spacing:.22em; color: var(--ink-3);
+  padding: 0 calc(var(--u) * 2) calc(var(--u) * 1.6);
+  border-bottom: 1px solid var(--hair);
+}
+.ow-board-cols .c-wave, .ow-board-cols .c-score,
+.ow-board-row  .c-wave, .ow-board-row  .c-score { text-align:right; }
+.ow-board-list { flex:1 1 auto; overflow-y:auto; min-height: calc(120px * var(--k)); }
+.ow-board-list::-webkit-scrollbar { width: calc(4px * var(--k)); }
+.ow-board-list::-webkit-scrollbar-thumb { background: rgba(0,229,255,.25); }
+.ow-board-row {
+  padding: calc(var(--u) * 1.9) calc(var(--u) * 2);
+  border-bottom: 1px solid var(--hair-2);
+  font-size: calc(12px * var(--k)); letter-spacing:.1em; color: var(--ink);
+}
+.ow-board-row .c-rank  { color: var(--ink-3); font-size: calc(10.5px * var(--k)); }
+.ow-board-row .c-who   { font-family: var(--fd); font-weight:800; letter-spacing:.18em; }
+.ow-board-row .c-job   { font-size: calc(9px * var(--k)); letter-spacing:.18em; color: var(--cyan); }
+.ow-board-row .c-wave  { color: var(--ink-2); }
+.ow-board-row .c-score { font-family: var(--fd); font-weight:800; color: var(--gold); letter-spacing:.04em; }
+.ow-board-row.podium .c-rank { color: var(--gold); }
+.ow-board-row.mine {
+  background: rgba(57,255,20,.07);
+  box-shadow: inset calc(2px * var(--k)) 0 0 var(--green);
+}
+.ow-board-row.mine .c-who { color: var(--green); }
+.ow-board-note {
+  flex:0 0 auto; padding: calc(var(--u) * 7) calc(var(--u) * 2);
+  font-size: calc(10.5px * var(--k)); letter-spacing:.22em; color: var(--ink-3);
+}
+.ow-board-actions {
+  flex:0 0 auto; margin-top: calc(var(--u) * 4);
+  display:flex; align-items:center; justify-content:space-between; gap: calc(var(--u) * 3);
+}
+.ow-board-foot { font-size: calc(8.5px * var(--k)); letter-spacing:.28em; color: var(--ink-3); }
+
+/* =========================================================== cabinet mode
+   ?cabinet=1 — the one Press Start 2P element on the attract-loop board
+   pages (the title card already spends its two on the wordmark + INSERT
+   COIN hint, so this never appears there). */
+.ow-cab-prompt {
+  position:absolute; left:50%; bottom: calc(var(--u) * 9);
+  transform: translateX(-50%); z-index: 40; pointer-events:none;
+  font-family: var(--fa); font-size: calc(13px * var(--k)); letter-spacing:.06em;
+  color: var(--gold); white-space:nowrap;
+  text-shadow: 0 0 calc(18px * var(--k)) rgba(255,215,0,.55), 0 2px 4px rgba(0,0,0,.9);
+}
 
 /* ============================================================== fadeouts */
 .ow-hidden { display:none !important; }
