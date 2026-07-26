@@ -13,7 +13,8 @@ export default defineConfig({
     hmr: process.env.OW_NO_HMR ? false : undefined,
   },
   preview: { host: '127.0.0.1' },
-  build: { target: 'es2022', sourcemap: true, chunkSizeWarningLimit: 4096 },
+  // sourcemap off: the 6.8 MB map shipped to Vercel but was 403'd there — pure deploy weight.
+  build: { target: 'es2022', sourcemap: false, chunkSizeWarningLimit: 4096 },
   // Large binary game assets served verbatim.
   assetsInclude: ['**/*.ktx2', '**/*.hdr', '**/*.exr', '**/*.bin', '**/*.glb'],
 });

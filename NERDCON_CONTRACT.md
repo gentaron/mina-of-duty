@@ -88,6 +88,9 @@ New subsystem `src/game/` (id `game`) owns the loop. Events on `ctx.events`:
   kills, accuracy, best, aliveEnemies}), start(job), continueRun(), restart(),
   skipToWave(n), god(bool), killAll() }` — killAll() kills all live AI (verifiers
   use it to test wave flow without aiming skill).
+- `ai:bark {kind, agent}` — ai → audio; kinds are the BARKS ids in `src/audio/vox.js`.
+- `boot:progress {phase, pct, detail?, ms?}` (pct monotonic 0..1) and
+  `boot:done {totalMs}` — engine → boot/loading UI.
 
 ## Ownership map (HARD boundaries)
 
@@ -99,8 +102,9 @@ New subsystem `src/game/` (id `game`) owns the loop. Events on `ctx.events`:
 | WORLD | `src/world/**` | Fintech signage/banners, NerdCon dressing, Ledger set piece |
 | WEAPONS | `src/weapons/**` | Renames + subtle brand accents |
 | LOOK (phase 2, solo) | `src/sky/**`, `src/render/**`, `src/materials/**` | Dusk-neon grade |
+| AUDIO | `src/audio/**` | Wave stingers, PA announcer, faction bark treatment, conference-floor ambience |
 
-Nobody touches `src/core/`, `src/physics/`, `src/player/`, `src/fx/`, `src/audio/`,
+Nobody touches `src/core/`, `src/physics/`, `src/player/`, `src/fx/`,
 `tools/` (except reading), `package.json`, `vite.config.js`. The old `TDM 10:00`
 match bar is replaced by wave/score HUD (UI agent) and its decorative state ignored
 (GAME agent) — coordinate through the events above, not through each other's files.
