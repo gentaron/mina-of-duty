@@ -337,10 +337,13 @@ export class WorldSystem {
       for (let i = 0; i < this.bulbs.length; i++) this.bulbs[i].intensity = 5 + 17 * mix;
     }
 
-    // THE LEDGER breathes: a slow emissive pulse on the gold, held low so it is
-    // a subtle shimmer in daylight and a clean bloom source after dusk.
+    // THE LEDGER breathes: a slow, shallow emissive pulse on the gold. Held very
+    // low (~0.06–0.16) so the monument's form reads from its metallic highlight,
+    // not from a flat self-lit wash — the emissive is a warm gold fill that stays
+    // under the bloom threshold in daylight and glows only gently at the dusk
+    // default instead of blowing the book tops to pale cream.
     const gold = this._ledgerMat ?? (this._ledgerMat = this.A?.mat('nerdcon_gold'));
-    if (gold) gold.emissiveIntensity = 0.28 + 0.12 * Math.sin(ctx.time.elapsed * 1.5);
+    if (gold) gold.emissiveIntensity = 0.11 + 0.05 * Math.sin(ctx.time.elapsed * 1.5);
   }
 
   lateUpdate(dt, ctx) {

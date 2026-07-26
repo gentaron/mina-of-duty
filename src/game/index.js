@@ -501,6 +501,19 @@ export class GameSystem {
       if (b != null) this._best = Number(b) || 0;
       const w = localStorage.getItem(BEST_WAVE_KEY);
       if (w != null) this._bestWave = Number(w) || 0;
+
+      // One-time migration: an earlier game hosted on this domain stored its high
+      // score under the plain-integer key 'nod_best'. If it beats our best, adopt
+      // it, then drop the legacy key so this runs at most once.
+      const legacy = localStorage.getItem('nod_best');
+      if (legacy != null) {
+        const lv = Number(legacy);
+        if (Number.isFinite(lv) && lv > this._best) {
+          this._best = lv;
+          localStorage.setItem(BEST_KEY, String(this._best));
+        }
+        localStorage.removeItem('nod_best');
+      }
     } catch {
       /* private mode / disabled storage — best stays 0 */
     }

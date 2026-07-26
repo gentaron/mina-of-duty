@@ -261,7 +261,9 @@ function makeSignMaterial(sign, texture) {
       map: texture,
       emissive: 0xffffff,
       emissiveMap: texture,
-      emissiveIntensity: 0.6, // restrained: subtle in daylight, blooms at night
+      // Garish is the joke (STABLECOIN LIQUORS), but held back from the bloom
+      // threshold so the neon stays hue-saturated magenta instead of a white core.
+      emissiveIntensity: 0.5,
       roughness: 0.5,
       metalness: 0.0,
       side: THREE.DoubleSide,
@@ -272,7 +274,7 @@ function makeSignMaterial(sign, texture) {
       map: texture,
       emissive: 0xffffff,
       emissiveMap: texture,
-      emissiveIntensity: 0.28,
+      emissiveIntensity: 0.2,
       roughness: 0.62,
       metalness: 0.0,
       side: THREE.DoubleSide,
@@ -377,7 +379,9 @@ function banner(A, root, disp, rng, cable, spec) {
   const h = spec.h;
   const midX = (x0 + x1) / 2;
   const top = cableYAt(cable, midX);
-  const cy = top.y - 0.03 - h / 2;
+  // Hang a clear span below the wire so the tie strings actually read as the
+  // thing holding it up, instead of the banner appearing welded to the cable.
+  const cy = top.y - 0.2 - h / 2;
   const cz = top.z;
 
   // canvas
@@ -393,9 +397,12 @@ function banner(A, root, disp, rng, cable, spec) {
   grd.addColorStop(1, 'rgba(0,0,0,0.16)');
   g.fillStyle = grd;
   g.fillRect(0, 0, W, H);
-  g.strokeStyle = 'rgba(240,240,240,0.9)';
-  g.lineWidth = Math.max(3, H * 0.045);
-  const m = H * 0.12;
+  // A faint printed trim, not a bright keyline: a low-contrast dark inset a few
+  // percent in from the hem, so the banner reads as printed vinyl rather than a
+  // composited UI panel with a white border.
+  g.strokeStyle = 'rgba(0,0,0,0.18)';
+  g.lineWidth = Math.max(2, H * 0.02);
+  const m = H * 0.16;
   g.strokeRect(m, m, W - m * 2, H - m * 2);
   drawLines(g, W, H, spec.lines, {
     family: MONO,
@@ -409,12 +416,14 @@ function banner(A, root, disp, rng, cable, spec) {
   const texture = texFrom(cv);
 
   const geo = clothGeometry(w, h, {
-    segX: 14,
+    segX: 16,
     segY: 8,
-    sag: 0.14,
-    wrinkle: 0.03,
-    bulge: 0.05,
-    twist: 0.03,
+    // A deeper catenary + belly so the banner visibly hangs and creases like the
+    // laundry two spans over, instead of hovering flat like a panel.
+    sag: 0.28,
+    wrinkle: 0.045,
+    bulge: 0.09,
+    twist: 0.04,
     thickness: 0.004,
     rng,
     hem: 1,
@@ -423,7 +432,9 @@ function banner(A, root, disp, rng, cable, spec) {
     map: texture,
     emissive: 0xffffff,
     emissiveMap: texture,
-    emissiveIntensity: 0.2, // fabric: legible at dusk, mostly lit — bloom later
+    // Scene light carries the vinyl by day; only a whisper of self-glow, so it
+    // stays legible at the dusk default without reading as a lit UI panel.
+    emissiveIntensity: 0.09,
     roughness: 0.86,
     metalness: 0.0,
     side: THREE.DoubleSide,
@@ -436,14 +447,21 @@ function banner(A, root, disp, rng, cable, spec) {
   disp.materials.push(mat);
   disp.textures.push(texture);
 
-  // tie strings from the banner's top edge up to the wire
-  for (const f of [-0.42, 0, 0.42]) {
+  // Grommets laced to the wire with tie cords. Five evenly spaced ties across the
+  // span, each a dark cord from a brass hem eyelet up to the cable — the visible
+  // connection that seats the banner on the span instead of floating it.
+  const topEdge = cy + h / 2;
+  for (const f of [-0.44, -0.22, 0, 0.22, 0.44]) {
     const tx = midX + f * w;
     const cAt = cableYAt(cable, tx);
-    const topEdge = cy + h / 2;
-    const len = Math.max(0.03, cAt.y - topEdge + 0.02);
-    A.addBox('metal_dark', BOX_THIN(A), tx, topEdge + len / 2, cAt.z, 0, 0.012, len, 0.012, {
+    const len = Math.max(0.05, cAt.y - topEdge + 0.02);
+    // the cord
+    A.addBox('metal_dark', BOX_THIN(A), tx, topEdge + len / 2, cAt.z, 0, 0.014, len, 0.014, {
       masks: [0.4, 0.6, 0.2],
+    });
+    // the eyelet / grommet punched through the banner hem
+    A.addBox('metal_rust', BOX_FINE(A), tx, topEdge - 0.015, cz + 0.006, 0, 0.055, 0.055, 0.02, {
+      masks: [0.9, 0.5, 0.2],
     });
   }
 }

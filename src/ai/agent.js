@@ -1040,6 +1040,14 @@ export class Agent {
     for (const c of this.colliders) this.phys?.removeCollider(c);
     this.colliders.length = 0;
     if (this.ragdoll) this.phys?.removeRagdoll(this.ragdoll);
+    // Per-instance GPU resource. RIG.createSkeleton() mints fresh bones + a fresh
+    // THREE.Skeleton for every agent, and three uploads one bone DataTexture per
+    // skeleton (Skeleton.computeBoneTexture). Without this, each spawn->dispose
+    // wave churn leaks ~1 GPU texture per soldier, unbounded. Skeleton.dispose()
+    // frees that boneTexture and is idempotent. The SkinnedMesh geometry and
+    // materials are SHARED/cached on the variant (AiSystem._variants) and are
+    // disposed by AiSystem at teardown — never dispose them here.
+    this.skeleton?.dispose();
     this.group.parent?.remove(this.group);
   }
 }

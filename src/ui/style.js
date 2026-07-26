@@ -123,7 +123,8 @@ const CSS = `
   height: calc(8px * var(--k));
   margin-left: calc(-0.8px * var(--k));
   margin-top: calc(-4px * var(--k));
-  background: linear-gradient(to top, rgba(255,255,255,.62), #fff 62%);
+  /* Cyan Pulse #00E5FF — the hip-fire reticle shares the interactive/ADS accent. */
+  background: linear-gradient(to top, rgba(0,229,255,.6), #6ef2ff 62%);
   box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 0 calc(3px * var(--k)) rgba(0,0,0,.75);
   transform-origin: 50% 50%;
   will-change: transform, opacity;
@@ -132,7 +133,7 @@ const CSS = `
   position:absolute; left:0; top:0;
   width: calc(2.2px * var(--k)); height: calc(2.2px * var(--k));
   margin-left: calc(-1.1px * var(--k)); margin-top: calc(-1.1px * var(--k));
-  background:#fff; border-radius:50%;
+  background: var(--cyan); border-radius:50%;
   box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 calc(4px * var(--k)) rgba(0,0,0,.7);
   will-change: opacity, transform;
 }
@@ -606,7 +607,11 @@ const CSS = `
 
 /* ================================================================ banner */
 .ow-banner {
-  position:absolute; left:50%; top:31%;
+  /* Sits at 40% (not 31%): the magenta HOLD-THE-LEDGER set-piece banner hangs in
+     the upper-centre of the establishing framings, and a toast at 31% stacked
+     straight over it. 40% drops the toast into the clear band between the run bar
+     (~10%) and the reticle (50%) so it reads on its own scrim. */
+  position:absolute; left:50%; top:40%;
   transform: translate(-50%,-50%);
   text-align:center;
   /* wide side padding on purpose: the scrim's outer 20% is a feather, so the
@@ -622,7 +627,7 @@ const CSS = `
 .ow-banner::before {
   content:''; position:absolute; inset:0; z-index:-1;
   background: linear-gradient(to bottom,
-    rgba(4,7,10,0) 0%, rgba(4,7,10,.60) 20%, rgba(4,7,10,.60) 80%, rgba(4,7,10,0) 100%);
+    rgba(4,7,10,0) 0%, rgba(4,7,10,.72) 20%, rgba(4,7,10,.72) 80%, rgba(4,7,10,0) 100%);
   -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,0) 0%, #000 20%, #000 80%, rgba(0,0,0,0) 100%);
           mask-image: linear-gradient(to right, rgba(0,0,0,0) 0%, #000 20%, #000 80%, rgba(0,0,0,0) 100%);
 }

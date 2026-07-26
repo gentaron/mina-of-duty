@@ -234,7 +234,7 @@ export const CLOTH_TILE = 0.78;
  * by VALUE tier rather than pattern so the three read as one company:
  *
  *   arid     → ENFORCER    cool graphite / gunmetal, mid value  (mean 0.088)
- *   woodland → CONSULTANT  warm business greige, the lightest    (mean 0.112)
+ *   woodland → CONSULTANT  cool dark-greige, a hair the lightest (mean 0.088)
  *   urban    → AUDITOR     neutral near-black, the darkest        (mean 0.062)
  *
  * The two-scale blotch machinery is untouched — it still supplies the surface
@@ -255,13 +255,18 @@ export const CAMO = {
     warp: 0.14,
   },
   woodland: {
-    // CONSULTANT: warm business greige / taupe — the lightest of the three
-    budget: 0.112,
-    pale: [0.360, 0.344, 0.312],
-    base: [0.272, 0.256, 0.226],
-    mid: [0.196, 0.182, 0.158],
-    dark: [0.120, 0.110, 0.094],
-    olive: [0.228, 0.212, 0.180],
+    // CONSULTANT: cool dark-greige. Neutralised from the old warm business
+    // greige/taupe, which read as tan and dissolved into the sand street; the
+    // families are now faintly COOL (B >= R) and the mean is pulled from 0.112
+    // down onto the corporate charcoal band so all three variants share one
+    // dark value. Kept a hair lighter than ENFORCER so the bare-headed
+    // silhouette still separates by relative tone.
+    budget: 0.088,
+    pale: [0.316, 0.320, 0.330],
+    base: [0.236, 0.240, 0.250],
+    mid: [0.166, 0.169, 0.177],
+    dark: [0.100, 0.102, 0.109],
+    olive: [0.196, 0.199, 0.207],
     macro: 3,
     warp: 0.16,
   },

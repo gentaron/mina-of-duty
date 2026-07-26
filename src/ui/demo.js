@@ -87,7 +87,9 @@ export class CombatDemo {
       { x: 8, z: 22, kind: 'friend', heading: 340 },
     ]);
 
-    ui.setPrompt({ key: 'F', text: 'Secure the ledger', sub: 'hold', progress: 0.42 });
+    // The Ledger is a set piece to defend, not a capture point — no hold-to-%
+    // progress (the real game/ loop is a wave holdout, it ships no such mechanic).
+    ui.setPrompt({ key: 'F', text: 'Defend · The Ledger', sub: 'objective' });
   }
 
   stop(ui) {

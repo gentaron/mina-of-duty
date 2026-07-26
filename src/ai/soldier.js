@@ -109,9 +109,9 @@ export const VARIANTS = {
   // ENFORCER — charcoal / gunmetal corporate armour, Boss Magenta trim.
   vanguard: {
     camo: 'arid',
-    clothTint: [0.99, 1.0, 1.03], // charcoal graphite (faint cool)
-    gearTint: [0.86, 0.88, 0.93], // gunmetal webbing
-    plateTint: [0.84, 0.86, 0.91], // charcoal plate
+    clothTint: [0.95, 0.97, 1.01], // charcoal graphite (cool, pulled down off "blue-grey")
+    gearTint: [0.83, 0.85, 0.91], // gunmetal webbing
+    plateTint: [0.81, 0.83, 0.89], // charcoal plate
     skinTint: [1.0, 0.94, 0.88],
     helmet: true,
     helmetCover: true,
@@ -129,13 +129,15 @@ export const VARIANTS = {
     accentHelmetStripe: true,
     accentPlateEdges: true,
   },
-  // CONSULTANT — beige/grey business-trench palette, subtle magenta tie. Bare
-  // head, lighter rig: "the consultant who invoices for this".
+  // CONSULTANT — dark-greige business-trench palette, subtle magenta tie. Bare
+  // head, lighter rig: "the consultant who invoices for this". Tints were warm
+  // (tan/taupe) and read as a second faction dissolving into the sand street;
+  // now cooled and darkened into the corporate charcoal band. Skin untouched.
   irregular: {
     camo: 'woodland',
-    clothTint: [1.05, 1.01, 0.92], // warm greige
-    gearTint: [1.02, 0.96, 0.82], // taupe rig
-    plateTint: [0.98, 0.93, 0.85],
+    clothTint: [0.92, 0.94, 0.98], // cool dark-greige (was warm greige)
+    gearTint: [0.80, 0.83, 0.88], // gunmetal rig (was taupe)
+    plateTint: [0.80, 0.83, 0.88], // dark-greige plate (was warm)
     skinTint: [0.86, 0.80, 0.74],
     helmet: false,
     headWrap: true,

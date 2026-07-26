@@ -390,20 +390,32 @@ export const PALETTE = {
 
   // ----------------------------------------------------------------- nerdcon --
   /**
-   * THE LEDGER. Brushed gold, self-lit with a restrained emissive the world
-   * pulses at runtime (see WorldSystem.update). Kept low (0.35–0.7) and
-   * toneMapped so it reads as warm gold in the 16:30 sun rather than a blown
-   * white block, and so a later night/bloom pass has clean emission to catch.
+   * THE LEDGER. Brushed cast gold on a stone plinth. Its daylight form comes from
+   * a satin metallic highlight (see `roughness`), NOT from emission — bright faces
+   * and darker gold flanks give the stacked-book silhouette. The emissive the
+   * world pulses at runtime (see WorldSystem.update) is only a gentle warm fill,
+   * held at ~0.06–0.16 so it stays under the bloom threshold in the 16:30 sun and
+   * glows softly at the dusk default instead of blowing to a pale-white block.
    */
   nerdcon_gold: {
     name: 'metal_brushed',
     surface: 'metal',
     opts: {
       vertexMasks: true,
-      tint: 0xffd700,
+      // Deep metallic gold, not poster-yellow: R stays under 1.0 in linear so a
+      // sunlit face keeps headroom instead of clipping to pale cream, and the
+      // monument reads as solid cast gold.
+      tint: 0xe8b923,
       scale: 0.5,
       normalStrength: 1.05,
-      three: { emissive: 0xffc61f, emissiveIntensity: 0.3, toneMapped: true },
+      // Satin-brushed spec: scale the baked roughness down (0.14 floor) so the book
+      // tops and the page-edge risers reflect at different brightnesses — that step
+      // contrast is the silhouette. Metalness pulled just off 1.0 leaves a thin
+      // diffuse gold body so up-facing covers stay brighter than side faces under a
+      // flat sky, which is the form that survives when the environment has no
+      // contrast to reflect.
+      roughness: [0.55, 0.0, 0.14],
+      three: { emissive: 0xe89512, emissiveIntensity: 0.11, metalness: 0.8, toneMapped: true },
     },
   },
   /** The Ledger plinth: dark dressed stone — a value anchor under the gold. */
