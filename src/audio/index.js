@@ -14,7 +14,10 @@
  *   audio.bark(kind, position, opts)   enemy voice: 'spot' | 'reload' |
  *                                      'grenade' | 'flank' | 'suppress' |
  *                                      'advance' | 'hurt' | 'death' | 'copy'
- *   audio.ui(kind)                     'hitmarker'|'headshot'|'kill'|'damage'
+ *   audio.ui(kind)                     'hitmarker'|'headshot'|'kill'|'damage'|
+ *                                      'wave_start'|'wave_clear'|'run_over'
+ *   audio.announce(kind)               PA announcer: 'wave'|'waveClear'|'over'.
+ *                                      Own cooldown; ignores the bark throttle.
  *   audio.setMasterVolume(v)  audio.setBusVolume(bus, v)
  *   audio.setAmbienceIntensity(v)      scales the distant-battle scheduler
  *   audio.report()                     diagnostics snapshot
@@ -32,19 +35,37 @@
 import { NoiseBank, SPEED_OF_SOUND, clamp, gain as mkGain } from './dsp.js';
 import { Mixer } from './mixer.js';
 import { SpatialField } from './spatial.js';
-import { Ambience, ambientOneShot, ONE_SHOTS } from './ambience.js';
+import {
+  Ambience, ambientOneShot, ONE_SHOTS, ONE_SHOT_RANGE, ONE_SHOT_FAR, pickOneShot,
+} from './ambience.js';
 import { WEAPON_PROFILES, resolveProfile, weaponShot, bulletWhizz, dryFire } from './weapons.js';
 import {
   surfaceImpact, footstep, shellCasing, reloadPhase, explosion, bodyFall, uiSound,
   heartbeat, cloth,
 } from './foley.js';
-import { bark as voxBark, barkFor } from './vox.js';
+import { bark as voxBark, barkFor, ANNOUNCE } from './vox.js';
 import { classifySpace } from './ir.js';
 
 const PROBE_RAYS = 9;
 const PROBE_DIST = 40;
 const DRY_SLOTS = 48;
 const GESTURES = ['pointerdown', 'mousedown', 'keydown', 'touchstart', 'wheel'];
+
+/**
+ * The PA has its own throttle, entirely separate from the 0.42 s bark throttle
+ * — an announcement is never "mush", and it must never be eaten because an
+ * enemy shouted a quarter-second earlier. The breather between waves is 4 s
+ * (BREATHER_S in src/game/waves.js), so a 2.5 s cooldown lets the settled call
+ * and the next wave's inbound call both land while still refusing a double-fire.
+ */
+const ANNOUNCE_COOLDOWN = 2.5;
+
+/**
+ * Seconds to hold each announcement back. The UI plays its wave stinger on the
+ * same event; the PA answering it a beat later reads as cause and effect, where
+ * both at once reads as a collision.
+ */
+const ANNOUNCE_DELAY = { wave: 0.55, waveClear: 0.95, over: 1.25 };
 
 /** Names other subsystems already use, mapped onto our voices. */
 const UI_ALIAS = {
@@ -58,6 +79,8 @@ const BUS_FOR = {
   shot: 'weapons', explosion: 'weapons', dryfire: 'weapons',
   hitmarker: 'ui', headshot: 'ui', kill: 'ui', armour: 'ui', damage: 'ui',
   grenade_warn: 'ui', regen: 'ui', lowhealth: 'ui',
+  // Wave stingers ride the ui bus so a concussion never muffles the game loop.
+  wave_start: 'ui', wave_clear: 'ui', run_over: 'ui',
   bark: 'voice', ambient: 'ambience',
 };
 
@@ -104,7 +127,7 @@ export class AudioSystem {
     /* per-frame rate limits */
     this._budget = { impact: 0, step: 0, shell: 0, whizz: 0 };
     this._lastBarkTime = -99;
-    this._lastEnemyFire = -99;
+    this._lastAnnounceTime = -99;
 
     this._health = 100;
     this._heartTimer = 0;
@@ -352,7 +375,7 @@ export class AudioSystem {
       case 'bodyfall': return bodyFall(actx, bank, rng, { when, level: o.level });
       case 'cloth': return cloth(actx, bank, rng, { when, level: o.level });
       case 'heartbeat': return heartbeat(actx, bank, rng, { when, level: o.level });
-      case 'bark': return voxBark(actx, bank, rng, { when, bark: o.bark, f0: o.f0, tract: o.tract, level: o.level, radio: o.radio });
+      case 'bark': return voxBark(actx, bank, rng, { when, bark: o.bark, f0: o.f0, tract: o.tract, level: o.level, radio: o.radio, pa: o.pa });
       case 'ambient': return ambientOneShot(actx, bank, rng, o.which, { when, level: o.level });
       default: return uiSound(actx, bank, rng, kind, { when, level: o.level });
     }
@@ -504,6 +527,35 @@ export class AudioSystem {
     return this._playDry('bark', o, 'voice', 0.25);
   }
 
+  /**
+   * The plaza PA. `kind` is a game-loop moment — 'wave' | 'waveClear' | 'over'
+   * (see ANNOUNCE in vox.js). Head-locked rather than positioned: a stadium PA
+   * has no direction, it is simply everywhere, and the heavy reverb send is
+   * what puts it on the buildings.
+   *
+   * Deliberately NOT routed through bark(): that path is throttled to one voice
+   * every 0.42 s so overlapping enemies do not turn to mush, and an announcement
+   * losing a coin-flip against a bark from the same frame would be a defect.
+   */
+  announce(kind, opts = {}) {
+    if (!this.running || this.actx.state === 'suspended') return false;
+    const spec = ANNOUNCE[kind];
+    if (!spec) return false;
+    const now = this.actx.currentTime;
+    if (now - this._lastAnnounceTime < ANNOUNCE_COOLDOWN && !opts.force) return false;
+    this._lastAnnounceTime = now;
+    // Inverse of the gunfire duck: the fight steps back, the voice does not.
+    this.mixer.duck(0.5, 1.4, 'announce');
+    return this._playDry('bark', {
+      bark: spec.bark,
+      f0: spec.f0,
+      tract: spec.tract,
+      pa: true,
+      level: opts.level ?? 1,
+      extraDelay: opts.delay ?? ANNOUNCE_DELAY[kind] ?? 0,
+    }, 'voice', 0.9);
+  }
+
   setMasterVolume(v) { this.mixer?.setMasterVolume(v); }
   setBusVolume(bus, v) { this.mixer?.setBusVolume(bus, v); }
   setAmbienceIntensity(v) { if (this.ambience) this.ambience.intensity = clamp(v, 0, 3); }
@@ -529,8 +581,17 @@ export class AudioSystem {
     on('damage:dealt', (p) => this._onDamageDealt(p));
     on('damage:taken', (p) => this._onDamageTaken(p));
     on('actor:death', (p) => this._onDeath(p));
-    // Optional: emitted by `ai` if it wants scripted chatter.
+    // Emitted by `ai` from real intent (spot / reload / grenade / flank / copy).
     on('ai:bark', (p) => this.bark(p?.kind ?? 'spot', p?.position, { voice: p?.voice ?? 0 }));
+
+    /* ---- HOLD THE LEDGER: the PA announcer ------------------------ */
+    // The UI plays the stinger on these same events; we answer it with the
+    // voice a beat later. `game:waveClear` opens the 4 s breather, which is the
+    // only window in the run where a two-second announcement can breathe.
+    on('game:wave', () => this.announce('wave'));
+    on('game:waveClear', () => this.announce('waveClear'));
+    // The run is over: this one always plays, whatever fired before it.
+    on('game:over', () => this.announce('over', { force: true }));
   }
 
   _onFire(p) {
@@ -562,13 +623,12 @@ export class AudioSystem {
     } else {
       this._playAt('shot', x, y, z, { profile, firstPerson: false }, 'weapons', 0.95);
       this.mixer.duck(clamp(0.5 - dist * 0.004, 0.12, 0.5), 0.08);
-      // Enemies opening fire get occasional chatter, so firefights feel alive
-      // even before `ai` grows its own bark logic.
-      const now = this.actx.currentTime;
-      if (now - this._lastEnemyFire > 4.5 && this.rng.float() < 0.45) {
-        this._lastEnemyFire = now;
-        this.bark(this.rng.float() < 0.6 ? 'spot' : 'suppress', p.origin, { level: 0.9 });
-      }
+      // No chatter is synthesised here any more. This used to fire a 45 %
+      // random 'spot'/'suppress' off every enemy shot as a stopgap; `ai` now
+      // emits `ai:bark` from real intent (spot / reload / grenade / flank /
+      // copy), and a random bark on top of an intentional one is worse than
+      // silence — it decouples the voice from what the enemy is actually doing,
+      // which is the entire value of the bark.
     }
   }
 
@@ -768,13 +828,19 @@ export class AudioSystem {
     if (!this.running) return;
     const rng = this.rng;
     const lp = this.field.listenerPos;
-    const which = rng.pick(ONE_SHOTS);
-    const far = which === 'heli' || which === 'siren';
-    const d = far ? rng.range(90, 260) : rng.range(14, 90);
+    // Weighted, not uniform: this is a conference district, so crowd and PA
+    // dominate and the city-at-war tells sit near the floor. See ambience.js.
+    const which = pickOneShot(rng);
+    const far = ONE_SHOT_FAR.has(which);
+    const range = ONE_SHOT_RANGE[which] ?? ONE_SHOT_RANGE.default;
+    const d = rng.range(range[0], range[1]);
     const a = rng.range(0, Math.PI * 2);
+    // Everything but the helicopter lives at head height or a storey up; a
+    // badge reader is at chest height and must not float over the plaza.
+    const yUp = which === 'heli' ? 28 : which === 'badge_beep' ? 0.4 : which === 'pa_chime' ? 7 : 5;
     this._playAt('ambient',
       lp.x + Math.cos(a) * d,
-      lp.y + rng.range(-1, which === 'heli' ? 28 : 5),
+      lp.y + rng.range(which === 'badge_beep' ? -0.8 : -1, yUp),
       lp.z + Math.sin(a) * d,
       {
         which, level: rng.range(0.55, 1), maxDist: 400,
@@ -837,6 +903,10 @@ export class AudioSystem {
     for (const w of ONE_SHOTS) {
       this._playAt('ambient', lp.x + 20, lp.y + 2, lp.z - 20, { which: w, level: 0.6 }, 'ambience', 0.1);
     }
+    // HOLD THE LEDGER: the wave stingers as the ui subsystem fires them, and
+    // all three PA calls (forced past their own cooldown).
+    for (const k of ['wave_start', 'wave_clear', 'run_over']) this.ui(k, 0.8);
+    for (const k of ['wave', 'waveClear', 'over']) this.announce(k, { force: true, delay: 0 });
     this._distantVolley();
     this._distantBoom();
     this._distantChatter();

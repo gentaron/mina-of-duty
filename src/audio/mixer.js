@@ -24,6 +24,21 @@
 import { biquad, gain, limiterCurve, shaper, clamp, osc } from './dsp.js';
 import { IR_SPECS, generateIR } from './ir.js';
 
+/**
+ * Sidechain shapes. Each entry maps a bus name to a fraction of the requested
+ * duck amount; a bus not listed is left alone.
+ *
+ *  combat   — gunfire and explosions. Get the world out of the way of the
+ *             transient; weapons and ui are never touched.
+ *  announce — the PA speaks. The exact inverse: dip the fight a little, and
+ *             leave `voice` completely alone so the announcement is the one
+ *             thing in the mix that did not move.
+ */
+const DUCK_PROFILES = {
+  combat:   { ambience: 1, foley: 0.55, voice: 0.4 },
+  announce: { weapons: 0.35, foley: 0.45, ambience: 0.6 },
+};
+
 const BUS_DEFS = {
   weapons:  { trim: 0.95, comp: { threshold: -7, knee: 8, ratio: 2.6, attack: 0.003, release: 0.16 } },
   foley:    { trim: 0.9, comp: { threshold: -14, knee: 10, ratio: 2.0, attack: 0.004, release: 0.2 } },
@@ -194,9 +209,10 @@ export class Mixer {
 
   /**
    * Sidechain duck. `amount` 0..1 of gain reduction, `hold` seconds before it
-   * starts floating back. Called on every gunshot and explosion.
+   * starts floating back, `profile` one of DUCK_PROFILES. Called on every
+   * gunshot and explosion (combat) and on every PA announcement (announce).
    */
-  duck(amount, hold = 0.12) {
+  duck(amount, hold = 0.12, profile = 'combat') {
     const t = this.actx.currentTime;
     const apply = (name, scale) => {
       const b = this.buses[name];
@@ -208,9 +224,8 @@ export class Mixer {
       b.duck.gain.cancelScheduledValues(t);
       b.duck.gain.setTargetAtTime(1 - a, t, 0.012);
     };
-    apply('ambience', 1);
-    apply('foley', 0.55);
-    apply('voice', 0.4);
+    const shape = DUCK_PROFILES[profile] ?? DUCK_PROFILES.combat;
+    for (const name in shape) apply(name, shape[name]);
   }
 
   /**

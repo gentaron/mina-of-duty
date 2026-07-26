@@ -130,7 +130,10 @@ export class Ambience {
     this._timers.gust = r.range(4, 14);
     this._timers.volley = r.range(3, 11);
     this._timers.boom = r.range(14, 44);
-    this._timers.oneshot = r.range(5, 17);
+    // Tighter than the war-zone original: the conference district's one-shot
+    // table is mostly crowd and PA, and those need to arrive often enough to
+    // read as a continuous population rather than as punctuation.
+    this._timers.oneshot = r.range(3, 12);
     this._timers.chatter = r.range(18, 50);
   }
 
@@ -169,7 +172,7 @@ export class Ambience {
 
     T.oneshot -= dt;
     if (T.oneshot <= 0) {
-      T.oneshot = r.range(6, 20);
+      T.oneshot = r.range(4.5, 14);
       api?.oneShot?.();
     }
 
@@ -210,8 +213,59 @@ export class Ambience {
 /* Positioned ambient one-shots                                       */
 /* ------------------------------------------------------------------ */
 
-/** Weighted table used by the scheduler. */
-export const ONE_SHOTS = ['dog', 'siren', 'creak', 'settle', 'birds', 'vehicle', 'heli', 'shout'];
+/** Every one-shot the synth can build. Order is not significance — see WEIGHTS. */
+export const ONE_SHOTS = [
+  'dog', 'siren', 'creak', 'settle', 'birds', 'vehicle', 'heli', 'shout',
+  'pa_chime', 'crowd_murmur', 'badge_beep',
+];
+
+/**
+ * Relative pick weights for the scheduler.
+ *
+ * This is a conference district at dusk, not a war zone: the thing you should
+ * hear most is fifteen hundred people in a hall you cannot see. `dog` and
+ * `siren` are city-at-war tells and read wrong here, so they are pushed down
+ * near the floor rather than deleted — the capability stays, and a single
+ * distant siren every few minutes is exactly right for downtown San Diego.
+ */
+export const ONE_SHOT_WEIGHTS = {
+  crowd_murmur: 5.0,   // the bed of the whole district
+  pa_chime: 2.4,       // the plaza PA clearing its throat somewhere else
+  vehicle: 2.0,
+  birds: 1.6,
+  shout: 1.2,
+  settle: 1.2,
+  creak: 1.0,
+  badge_beep: 0.8,     // rare by design: a scanner at a door you walked past
+  heli: 0.8,
+  siren: 0.5,
+  dog: 0.35,
+};
+
+/** Metres from the listener a one-shot is placed at: [min, max]. */
+export const ONE_SHOT_RANGE = {
+  default: [14, 90],
+  heli: [90, 260],
+  siren: [120, 300],
+  pa_chime: [45, 150],
+  crowd_murmur: [28, 70],   // "a room of 1500 people at 40 m"
+  badge_beep: [6, 22],      // a door, not a skyline
+};
+
+/** Placed above the rooftops: no occlusion, big makeup gain. */
+export const ONE_SHOT_FAR = new Set(['heli', 'siren', 'pa_chime']);
+
+/** Weighted pick. Deterministic — `rng` is always a ctx.rng fork. */
+export function pickOneShot(rng) {
+  let total = 0;
+  for (const k of ONE_SHOTS) total += ONE_SHOT_WEIGHTS[k] ?? 1;
+  let r = rng.range(0, total);
+  for (const k of ONE_SHOTS) {
+    r -= ONE_SHOT_WEIGHTS[k] ?? 1;
+    if (r <= 0) return k;
+  }
+  return ONE_SHOTS[0];
+}
 
 export function ambientOneShot(actx, bank, rng, kind, o = {}) {
   const t0 = o.when ?? actx.currentTime;
@@ -347,6 +401,91 @@ export function ambientOneShot(actx, bank, rng, kind, o = {}) {
       ad(wg.gain, t0, 0.11 * lvl, dur * 0.4, dur * 0.6);
       w.start(t0); w.stop(t0 + dur * 1.2);
       return { node: out, end: t0 + dur * 1.3, send: 0.9 };
+    }
+    case 'pa_chime': {
+      // The plaza PA somewhere else in the district clearing its throat: the
+      // same descending fourth the announcer opens with, minus the
+      // announcement. Hearing it un-followed-up is what makes the district feel
+      // bigger than the block you are standing on.
+      const base = rng.range(760, 800);
+      const chain = gain(actx, 1);
+      const horn = biquad(actx, 'peaking', 1650, 2.2, 6);
+      const lp = biquad(actx, 'lowpass', rng.range(3400, 5200), 0.7);
+      series(chain, horn, lp).connect(out);
+      const gap = rng.range(0.26, 0.34);
+      for (let i = 0; i < 2; i++) {
+        const bt = t0 + i * gap;
+        const f = i === 0 ? base : base * 0.75;   // perfect fourth down
+        const o1 = osc(actx, 'sine', f);
+        const o2 = osc(actx, 'triangle', f * 2);
+        const og = gain(actx, 0.13);
+        const g = gain(actx, 0);
+        o1.connect(g); o2.connect(og); og.connect(g); g.connect(chain);
+        ad(g.gain, bt, 0.24 * lvl, 0.008, rng.range(0.5, 0.78));
+        o1.start(bt); o2.start(bt); o1.stop(bt + 1.05); o2.stop(bt + 1.05);
+      }
+      // Two pure sines through a 2.8 s convolution build up hard — this was
+      // measured at peak 0.58 through the master at send 1.3, six times a
+      // distant siren. 0.4 keeps it clearly the wettest thing in the table
+      // (which is what puts it across the plaza) without owning the mix.
+      return { node: out, end: t0 + gap + 1.3, send: 0.4 };
+    }
+    case 'crowd_murmur': {
+      // Fifteen hundred people in a hall forty metres away. Same source/filter
+      // trick as `shout` — sawtooth through two bandpasses — but four of them
+      // at unrelated pitches over a broadband room wash, each drifting on its
+      // own slow LFO. The point is the SUM: nothing in here is allowed to
+      // resolve into a word, and no single layer is allowed to be the loudest
+      // for long. Contour, no words, times four.
+      const dur = rng.range(2.6, 5.5);
+      const wash = gain(actx, 0);
+      const wlp = biquad(actx, 'lowpass', rng.range(2100, 3000), 0.7);
+      series(wash, wlp).connect(out);
+      ad(wash.gain, t0, 1, dur * 0.45, dur * 0.6);
+
+      // Room tone under the voices: pink noise through the same vowel band.
+      const src = bank.source('pink', rng, rng.range(0.85, 1.1));
+      const shp = biquad(actx, 'bandpass', rng.range(700, 1100), 0.9);
+      const sg = gain(actx, 0.08 * lvl);
+      series(src, shp, sg).connect(wash);
+      src.start(t0, src._offset, dur * 1.45);
+
+      for (let i = 0; i < 4; i++) {
+        const v = osc(actx, 'sawtooth', rng.range(95, 205));
+        const b1 = biquad(actx, 'bandpass', rng.range(520, 900), 3.2);
+        const b2 = biquad(actx, 'bandpass', rng.range(1150, 2100), 4.2);
+        const g = gain(actx, 0.055 * lvl);
+        v.connect(b1); v.connect(b2);
+        b1.connect(g); b2.connect(g);
+        g.connect(wash);
+        const drift = osc(actx, 'sine', rng.range(0.35, 1.25));
+        const dg = gain(actx, rng.range(6, 22));
+        drift.connect(dg); dg.connect(v.frequency);
+        drift.start(t0); drift.stop(t0 + dur * 1.45);
+        v.start(t0); v.stop(t0 + dur * 1.45);
+      }
+      return { node: out, end: t0 + dur * 1.55, send: 1.25 };
+    }
+    case 'badge_beep': {
+      // Registration scanner at a door. One clean beep; one time in seven the
+      // double that means "try that again". Rare, and never twice in a row from
+      // the same place — the scheduler re-picks its position every time.
+      const n = rng.float() < 0.14 ? 2 : 1;
+      const f = rng.range(2050, 2650);
+      for (let i = 0; i < n; i++) {
+        const bt = t0 + i * 0.13;
+        const o1 = osc(actx, 'square', f);
+        const lp = biquad(actx, 'lowpass', 5400, 0.7);
+        const g = gain(actx, 0);
+        o1.connect(g); series(g, lp).connect(out);
+        ad(g.gain, bt, 0.42 * lvl, 0.003, 0.055);
+        o1.start(bt); o1.stop(bt + 0.12);
+      }
+      // The contact click of the badge on the reader.
+      struckResonator(actx, bank, rng, Math.max(t0 - 0.012, 0), [
+        { f: rng.range(2600, 4200), q: 12, g: 0.05 * lvl, decay: 0.012 },
+      ], 0.0012).connect(out);
+      return { node: out, end: t0 + 0.45, send: 0.5 };
     }
     case 'shout':
     default: {

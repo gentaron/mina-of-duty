@@ -89,14 +89,18 @@ try {
     const mod = await import('/src/audio/selftest.js');
     return mod.runAudioSelfTest();
   });
+  // vite can re-optimize more than once (a cold cache plus a newly-seen module
+  // graph will do it twice), so this retries rather than assuming one reload.
   let offline;
-  try {
-    offline = await runOffline();
-  } catch (err) {
-    if (!/Execution context was destroyed/.test(String(err?.message))) throw err;
-    logs.push('[probe] page reloaded during import (vite dep optimize) — retrying');
-    await page.waitForFunction('window.__READY__ === true', null, { timeout: TIMEOUT });
-    offline = await runOffline();
+  for (let attempt = 0; ; attempt++) {
+    try {
+      offline = await runOffline();
+      break;
+    } catch (err) {
+      if (attempt >= 3 || !/Execution context was destroyed/.test(String(err?.message))) throw err;
+      logs.push('[probe] page reloaded during import (vite dep optimize) — retrying');
+      await page.waitForFunction('window.__READY__ === true', null, { timeout: TIMEOUT });
+    }
   }
 
   console.log(`\n=== OFFLINE SELF TEST — ${offline.cases} cases, ${offline.ok ? 'PASS' : 'FAIL'} ===`);
@@ -140,6 +144,31 @@ try {
           requestAnimationFrame(tick);
         }), n);
       await pump(60);
+
+      /* --- PA announcer: output, own cooldown, independent of barks --- */
+      // Runs BEFORE debugStorm so the announcer's cooldown is still pristine.
+      const pa = await page.evaluate(async () => {
+        const a = window.__AUDIO__;
+        const before = a.stats.events;
+        const first = a.announce('wave');                 // fires
+        const bark = a.bark('spot', null, {});            // bark throttle untouched
+        const inside = a.announce('waveClear');           // refused: own cooldown
+        const forced = a.announce('over', { force: true });
+        const unknown = a.announce('not_a_game_moment');  // refused: no such line
+        const mid = a.stats.events - before;
+        await new Promise((r) => setTimeout(r, 2600));    // outlast the cooldown
+        const after = a.announce('waveClear');
+        return { first, bark, inside, forced, unknown, after, voicesFired: mid };
+      });
+      const paOk = pa.first === true && pa.bark === true && pa.inside === false &&
+        pa.forced === true && pa.unknown === false && pa.after === true &&
+        pa.voicesFired === 3;
+      console.log(`\n=== PA ANNOUNCER — ${paOk ? 'PASS' : 'FAIL'} ===`);
+      console.log(' ', JSON.stringify(pa));
+      console.log('  expect: fires, bark still allowed, refused inside cooldown,' +
+        ' force bypasses, unknown kind refused, fires again after 2.6 s, 3 voices built');
+      if (!paOk) exitCode = 1;
+
       const storm = await page.evaluate(() => window.__AUDIO__.debugStorm());
       await pump(120);
       const storm2 = await page.evaluate(() => window.__AUDIO__.debugStorm());
@@ -150,7 +179,7 @@ try {
       console.log('report :', JSON.stringify(after, null, 1));
       if (after.errors > 0) exitCode = 1;
 
-      /* --- 3. does the space probe actually read the level? --------- */
+      /* --- 4. does the space probe actually read the level? --------- */
       // The gunshot tail is only environmental if this classification tracks
       // the geometry, so walk the camera through the named shots and print it.
       console.log('\n=== SPACE PROBE PER SHOT ===');

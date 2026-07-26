@@ -668,6 +668,10 @@ export function uiSound(actx, bank, rng, kind, o = {}) {
   const t0 = o.when ?? actx.currentTime;
   const out = gain(actx, 1);
   const lvl = o.level ?? 1;
+  // Most UI voices are inside 0.9 s. The wave stingers are musical figures and
+  // need longer, so each case that outlives the default says so — the caller
+  // uses this to decide when the voice can be unplugged.
+  let end = t0 + 0.9;
   switch (kind) {
     case 'hitmarker': {
       const o1 = osc(actx, 'square', 2400);
@@ -712,10 +716,18 @@ export function uiSound(actx, bank, rng, kind, o = {}) {
     }
     case 'armour': {
       // Ceramic plate strike: brighter and harder than a flesh hitmarker.
+      //
+      // These numbers were measured, not guessed. As written originally this
+      // voice rendered at peak 0.0015 / rms 0.00002 through the master — 36 dB
+      // under its sibling `kill` and below the self-test's silence threshold,
+      // i.e. an armour hitmarker the player could not hear at all. The cause is
+      // the excitation, not the makeup gain: a 1.5 ms burst is shorter than a
+      // Q=30 resonator's 2.4 ms ring-up time, so the partials never reach
+      // amplitude. Longer burst + more level, same sharp ceramic character.
       const r = struckResonator(actx, bank, rng, t0, [
-        { f: 3900, q: 30, g: 0.09 * lvl, decay: 0.045 },
-        { f: 6400, q: 22, g: 0.05 * lvl, decay: 0.025 },
-      ], 0.0015);
+        { f: 3900, q: 30, g: 2.2 * lvl, decay: 0.045 },
+        { f: 6400, q: 22, g: 1.2 * lvl, decay: 0.025 },
+      ], 0.006);
       r.connect(out);
       break;
     }
@@ -757,6 +769,115 @@ export function uiSound(actx, bank, rng, kind, o = {}) {
       o1.start(t0); o1.stop(t0 + 0.9);
       break;
     }
+
+    /* --- HOLD THE LEDGER wave stingers ----------------------------- */
+
+    case 'wave_start': {
+      // Escalating minor arpeggio (root, m3, 5, octave), each step louder and
+      // the last one held. Squares under a closing lowpass, detuned a few cents
+      // so it grinds slightly: a terminal announcing a problem, not a level-up
+      // fanfare. Terse on purpose — the banner is already doing the talking.
+      const root = 294;                     // D4
+      const steps = [0, 3, 7, 12];
+      const dt = 0.115;
+      for (let i = 0; i < steps.length; i++) {
+        const bt = t0 + i * dt;
+        const last = i === steps.length - 1;
+        const f = root * semis(steps[i]);
+        const o1 = osc(actx, 'square', f);
+        const o2 = osc(actx, 'square', f, -9);
+        const lp = biquad(actx, 'lowpass', 2400 + i * 520, 0.9);
+        const g = gain(actx, 0);
+        o1.connect(g); o2.connect(g); series(g, lp).connect(out);
+        ad(g.gain, bt, (0.095 + i * 0.03) * lvl, 0.004, last ? 0.34 : 0.095);
+        const stop = bt + (last ? 0.5 : 0.2);
+        o1.start(bt); o2.start(bt); o1.stop(stop); o2.stop(stop);
+      }
+      // Sub under the landing note: the wave has weight, it is not a beep.
+      const st = t0 + (steps.length - 1) * dt;
+      const sub = osc(actx, 'sine', root * 0.5);
+      const sg = gain(actx, 0);
+      sub.connect(sg); sg.connect(out);
+      ad(sg.gain, st, 0.22 * lvl, 0.006, 0.3);
+      sub.start(st); sub.stop(st + 0.5);
+      end = t0 + 1.1;
+      break;
+    }
+
+    case 'wave_clear': {
+      // The settle chime. This one plays every single wave, so it has to stay
+      // welcome after fifty hearings: a major arpeggio (root, M3, 5, octave) on
+      // triangles — the `kill` chime's family, a register down so a wave clear
+      // reads bigger than a single kill — top note left ringing, plus two
+      // struck bell partials for the gold. Coin-adjacent, not a slot machine:
+      // it resolves and stops instead of trilling.
+      const root = 392;                     // G4
+      const steps = [0, 4, 7, 12];
+      const dt = 0.078;
+      for (let i = 0; i < steps.length; i++) {
+        const bt = t0 + i * dt;
+        const last = i === steps.length - 1;
+        const f = root * semis(steps[i]);
+        const o1 = osc(actx, 'triangle', f);
+        const o2 = osc(actx, 'triangle', f * 2, 5);   // quiet octave: bell, not organ
+        const og = gain(actx, 0.2);
+        const g = gain(actx, 0);
+        o1.connect(g); o2.connect(og); og.connect(g); g.connect(out);
+        ad(g.gain, bt, (last ? 0.46 : 0.29) * lvl, 0.005, last ? 0.7 : 0.17);
+        const stop = bt + (last ? 0.95 : 0.3);
+        o1.start(bt); o2.start(bt); o1.stop(stop); o2.stop(stop);
+      }
+      struckResonator(actx, bank, rng, t0 + 0.25, [
+        { f: 2640, q: 26, g: 0.075 * lvl, decay: 0.4 },
+        { f: 3960, q: 22, g: 0.042 * lvl, decay: 0.26 },
+      ], 0.0035).connect(out);
+      // Low root underneath: the "settled" weight the bonus number lands on.
+      const b = osc(actx, 'sine', root * 0.5);
+      const bg = gain(actx, 0);
+      b.connect(bg); bg.connect(out);
+      ad(bg.gain, t0, 0.3 * lvl, 0.012, 0.6);
+      b.start(t0); b.stop(t0 + 0.9);
+      end = t0 + 1.7;
+      break;
+    }
+
+    case 'run_over': {
+      // INSUFFICIENT FUNDS. A descending minor figure that lands on a flat,
+      // detuned low dyad and sags a few cents while the lowpass shuts — the
+      // sound of a terminal declining you. Deliberately NOT the cartoon
+      // trombone: no glissando, no vibrato, nothing funny about it.
+      const root = 392;
+      const steps = [0, -3, -8];
+      const dt = 0.17;
+      for (let i = 0; i < steps.length; i++) {
+        const bt = t0 + i * dt;
+        const f = root * semis(steps[i]);
+        const o1 = osc(actx, 'triangle', f);
+        const o2 = osc(actx, 'square', f, -14);
+        const sq = gain(actx, 0.32);
+        const lp = biquad(actx, 'lowpass', 2200 - i * 420, 0.8);
+        const g = gain(actx, 0);
+        o1.connect(g); o2.connect(sq); sq.connect(g); series(g, lp).connect(out);
+        ad(g.gain, bt, (0.26 - i * 0.03) * lvl, 0.006, 0.16);
+        o1.start(bt); o2.start(bt); o1.stop(bt + 0.36); o2.stop(bt + 0.36);
+      }
+      // The verdict: two saws an octave and a half below the figure, holding,
+      // then drifting flat as the filter closes over them.
+      const lt = t0 + steps.length * dt;
+      const lo = root * semis(-20);         // ~123 Hz
+      const l1 = osc(actx, 'sawtooth', lo);
+      const l2 = osc(actx, 'sawtooth', lo, -22);
+      const llp = biquad(actx, 'lowpass', 1400, 0.9);
+      const lg = gain(actx, 0);
+      l1.connect(lg); l2.connect(lg); series(lg, llp).connect(out);
+      sweep(l1.frequency, lt + 0.35, lo, lo * 0.945, 0.75);
+      sweep(l2.frequency, lt + 0.35, lo, lo * 0.938, 0.75);
+      sweep(llp.frequency, lt, 1400, 430, 1.1);
+      ad(lg.gain, lt, 0.28 * lvl, 0.03, 1.1);
+      l1.start(lt); l2.start(lt); l1.stop(lt + 1.35); l2.stop(lt + 1.35);
+      end = t0 + 2.2;
+      break;
+    }
     default: {
       const o1 = osc(actx, 'sine', 1200);
       const g = gain(actx, 0);
@@ -765,7 +886,7 @@ export function uiSound(actx, bank, rng, kind, o = {}) {
       o1.start(t0); o1.stop(t0 + 0.08);
     }
   }
-  return { node: out, end: t0 + 0.9, send: 0 };
+  return { node: out, end, send: 0 };
 }
 
 /**

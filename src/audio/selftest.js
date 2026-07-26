@@ -27,7 +27,7 @@ import {
   surfaceImpact, footstep, shellCasing, reloadPhase, explosion, bodyFall, uiSound,
   heartbeat, cloth,
 } from './foley.js';
-import { bark, BARKS } from './vox.js';
+import { bark, BARKS, ANNOUNCE } from './vox.js';
 import { ambientOneShot, ONE_SHOTS } from './ambience.js';
 import { IR_SPECS, generateIR, classifySpace } from './ir.js';
 
@@ -184,8 +184,16 @@ export async function runAudioSelfTest(opts = {}) {
   await push('heartbeat', 1.5, ({ bank, rng, mixer, t }) => {
     route(mixer, heartbeat(mixer.actx, bank, rng, { when: t }), 'foley');
   });
-  for (const k of ['hitmarker', 'headshot', 'kill', 'damage', 'lowhealth']) {
-    await push(`ui:${k}`, 1.5, ({ bank, rng, mixer, t }) => {
+  // Render length per UI voice. The wave stingers are musical figures rather
+  // than blips, so they need a longer window than a hitmarker or the tail gets
+  // cut off inside the measurement and the duration comparison means nothing.
+  const UI_CASES = {
+    hitmarker: 1.5, headshot: 1.5, kill: 1.5, damage: 1.5, lowhealth: 1.5,
+    grenade_warn: 1.5, armour: 1.5, regen: 1.5,
+    wave_start: 2, wave_clear: 2.5, run_over: 3,
+  };
+  for (const k of Object.keys(UI_CASES)) {
+    await push(`ui:${k}`, UI_CASES[k], ({ bank, rng, mixer, t }) => {
       route(mixer, uiSound(mixer.actx, bank, rng, k, { when: t }), 'ui');
     }, { reverb: false });
   }
@@ -199,6 +207,16 @@ export async function runAudioSelfTest(opts = {}) {
   await push('bark:radio', 3, ({ bank, rng, mixer, t }) => {
     route(mixer, bark(mixer.actx, bank, rng, { when: t, bark: 'contact', radio: true }), 'voice');
   });
+  // PA treatment: chime preamble + horn colouring. Longer window because the
+  // announcer's voice does not start until PA_LEAD seconds in.
+  for (const key of Object.keys(ANNOUNCE)) {
+    const a = ANNOUNCE[key];
+    await push(`pa:${key}`, 4.5, ({ bank, rng, mixer, t }) => {
+      route(mixer, bark(mixer.actx, bank, rng, {
+        when: t, bark: a.bark, f0: a.f0, tract: a.tract, pa: true,
+      }), 'voice');
+    });
+  }
 
   /* ---- ambient one-shots ---------------------------------------- */
   for (const k of ONE_SHOTS) {
